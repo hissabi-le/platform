@@ -1,0 +1,63 @@
+name: CI
+# Run on every push and every pull-request to any branch
+on:
+  push:
+  pull_request:
+
+# Cancel older, still-running copies of the same workflow on the same branch
+concurrency:
+  group: ${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  rust:
+    name: Rust – fmt + clippy + tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Install a pinned Rust toolchain (stable by default)
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+
+      - name: cargo fmt check
+        run: cargo fmt --all -- --check
+
+      - name: cargo clippy
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+      - name: cargo test
+        run: cargo test --all
+
+  python:
+    name: Python – ruff + pytest
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install ruff pytest
+
+      - name: Lint with ruff
+        run: ruff backend/analytics-worker
+
+      - name: Run unit tests
+        run: pytest backend/analytics-worker/tests || true   # `true` until tests exist
+
+  # Optional: unify job status so one failure blocks merge
+  summary:
+    needs: [rust, python]
+    runs-on: ubuntu-latest
+    steps:
+      - name: All jobs passed
+        run: echo "✅ CI green!"

@@ -49,7 +49,7 @@ jobs:
           pip install ruff pytest
 
       - name: Lint with ruff
-        run: ruff backend/analytics-worker
+        run: ruff check backend/analytics-worker
 
       - name: Run unit tests
         run: pytest backend/analytics-worker/tests || true   # `true` until tests exist

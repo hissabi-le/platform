@@ -1,3 +1,5 @@
+# infra/terraform/outputs.tf
+
 output "api_ip" {
   description = "public IP of the API droplet"
   value       = digitalocean_droplet.api.ipv4_address
@@ -11,11 +13,13 @@ output "worker_ip" {
 output "db_uri" {
   description = "connection URI for managed Postgres"
   value       = digitalocean_database_cluster.postgres.uri
+  sensitive = true
 }
 
 output "redis_uri" {
-  description = "connection URL for Redis"
-  value       = digitalocean_redis_database.cache.redis_url
+  description = "connection URI for managed Redis"
+  value       = digitalocean_database_cluster.redis.uri
+  sensitive = true
 }
 
 output "spaces_endpoint" {

@@ -1,2 +1,11 @@
+# backend/analytics-worker/pyproject.toml
+
+[project]
+name = "analytics-worker"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = ["celery"]
+
 [tool.ruff]
-src/
+line-length = 88
+src = ["src"]

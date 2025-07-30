@@ -1,10 +1,12 @@
+# infra/terraform/main.tf
+
 # vpc
 resource "digitalocean_vpc" "main" {
   name   = "hissabi-vpc"
   region = var.region
 }
 
-# droplets
+# api droplet
 resource "digitalocean_droplet" "api" {
   name     = "hissabi-api"
   region   = var.region
@@ -13,6 +15,7 @@ resource "digitalocean_droplet" "api" {
   vpc_uuid = digitalocean_vpc.main.id
 }
 
+# worker droplet
 resource "digitalocean_droplet" "worker" {
   name     = "hissabi-worker"
   region   = var.region
@@ -21,24 +24,26 @@ resource "digitalocean_droplet" "worker" {
   vpc_uuid = digitalocean_vpc.main.id
 }
 
-# managed postgres
+# managed Postgres cluster
 resource "digitalocean_database_cluster" "postgres" {
-  name       = "hissabi-db"
-  engine     = "pg"
-  version    = "16"
-  size       = "db-s-1vcpu-1gb"
-  region     = var.region
-  num_nodes  = 1
-  vpc_uuid   = digitalocean_vpc.main.id
-}
-
-# managed redis
-resource "digitalocean_redis_database" "cache" {
-  name     = "hissabi-redis"
-  engine   = "redis"
+  name     = "hissabi-db"
+  engine   = "pg"
+  version  = "16"
   size     = "db-s-1vcpu-1gb"
   region   = var.region
-  vpc_uuid = digitalocean_vpc.main.id
+  node_count             = 1              # use node_count, not num_nodes
+  private_network_uuid   = digitalocean_vpc.main.id  # attach to VPC
+}
+
+# managed Redis cluster (engine redis)
+resource "digitalocean_database_cluster" "redis" {
+  name     = "hissabi-redis"
+  engine   = "redis"
+  version  = "7"                         # Redis major version
+  size     = "db-s-1vcpu-1gb"
+  region   = var.region
+  node_count             = 1
+  private_network_uuid   = digitalocean_vpc.main.id
 }
 
 # spaces bucket

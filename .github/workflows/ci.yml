@@ -1,18 +1,36 @@
 jobs:
-  python:
-    name: Python – ruff + pytest
+  lint-and-test:
     runs-on: ubuntu-latest
+    services:
+      db:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_USER: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 10s --health-timeout 5s --health-retries 5
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: '3.12'
       - name: Install dependencies
         run: |
           pip install -U pip
-          pip install ruff pytest
+          pip install ruff pytest pytest-asyncio fastapi uvicorn[standard] sqlalchemy asyncpg alembic fastapi-users[sqlalchemy2] stripe
       - name: Lint with ruff
-        run: ruff check backend/analytics-worker
+        run: |
+          ruff check backend/analytics-worker
+          ruff check backend/api
+      - name: Run migrations
+        run: alembic upgrade head
+        working-directory: backend/api
+        env:
+          DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/postgres
       - name: Run unit tests
-        run: pytest backend/analytics-worker/tests
-
+        run: pytest backend/api/tests backend/analytics-worker/tests
+        env:
+          DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/postgres

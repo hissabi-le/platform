@@ -101,3 +101,18 @@ class TransactionRead(TransactionBase):
     id: int
 
     model_config = ConfigDict(from_attributes=True)
+
+class DocumentRead(BaseModel):
+    id:  int
+    org_id:  int
+    upload_id: Optional[int] = None
+    doc_type:  str
+    filename:  str
+    content_type: str
+    storage_path: str
+    size_bytes:   int
+    created_at:   datetime
+    metadata_json: Optional[dict]
+
+    class Config:
+        orm_mode = True

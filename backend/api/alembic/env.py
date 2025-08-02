@@ -7,18 +7,34 @@ from sqlalchemy import pool
 from sqlalchemy.ext.asyncio import async_engine_from_config
 from alembic import context
 
-sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'src'))
-from models import Base  # noqa
+# add the parent folder (backend/api) to sys.path so we can import src as a package
+BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+sys.path.insert(0, BASE_DIR)
 
+# now import your metadata from src.models
+from src.models import Base  # noqa
+
+# this is the Alembic Config object, which provides access to the .ini values
 config = context.config
+
+db_url = os.getenv("DATABASE_URL")
+
+if db_url:
+    # set the sqlalchemy.url in the Alembic config
+    config.set_main_option("sqlalchemy.url", db_url)
+
+
+# set up Python logging per the config file
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
+# the target for 'autogenerate' support
 target_metadata = Base.metadata
 
 
 def run_migrations_offline() -> None:
-    url = os.environ.get("DATABASE_URL")
+    """Run migrations in 'offline' mode."""
+    url = os.getenv("DATABASE_URL")
     context.configure(
         url=url,
         target_metadata=target_metadata,
@@ -31,11 +47,14 @@ def run_migrations_offline() -> None:
 
 def do_run_migrations(connection):
     context.configure(connection=connection, target_metadata=target_metadata)
-    context.run_migrations()
+    with context.begin_transaction():
+        context.run_migrations()
 
 
 async def run_migrations_online() -> None:
-    url = os.environ.get("DATABASE_URL")
+    """Run migrations in 'online' mode."""
+    # pull DB URL from env
+    url = os.getenv("DATABASE_URL")
     connectable = async_engine_from_config(
         {"sqlalchemy.url": url},
         prefix="sqlalchemy.",

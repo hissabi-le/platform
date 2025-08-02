@@ -1,14 +1,35 @@
+# backend/api/Dockerfile
+
+# base image
 FROM python:3.12-slim
 
-# 2. set workdir
+# set workdir
 WORKDIR /app
+COPY alembic.ini .
 
-# 3. install runtime deps
+# install runtime deps
 COPY pyproject.toml .
-RUN pip install --no-cache-dir fastapi uvicorn[standard]
+RUN pip install --no-cache-dir \
+    fastapi \
+    uvicorn[standard] \
+    sqlalchemy>=2.0.0 \
+    asyncpg \
+    alembic \
+    greenlet \
+    fastapi-users-db-sqlalchemy \
+    fastapi-users[sqlalchemy2]\
+    stripe\
+    setuptools \
+    wheel\
+    openai\
+    pandas\
+    numpy \
+    pytest\
+    pytest-asyncio
 
-# 4. copy source
-COPY src src
+# copy source + alembic scripts if need migrations at runtime
+COPY src       src
+COPY alembic   alembic
 
-# 5. start uvicorn pointing at src/main.py
+# default command
 CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000"]

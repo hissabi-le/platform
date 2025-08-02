@@ -5,9 +5,9 @@ import pytest
 from fastapi.testclient import TestClient
 
 os.environ["DATABASE_URL"] = "sqlite+aiosqlite:///:memory:"
-from api.src.main import app
-from api.src.database import engine, Base, async_session
-from api.src.models import Organisation
+from src.main import app
+from src.database import engine, Base, async_session
+from src.models import Organisation
 
 
 @pytest.fixture(scope="module", autouse=True)

@@ -1,11 +1,32 @@
 import os
+from typing import AsyncGenerator
+
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
+from sqlalchemy.orm import declarative_base
 
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+asyncpg://postgres:postgres@localhost:5432/postgres")
+# your DB URL (make sure DATABASE_URL is set in env)
+DATABASE_URL = os.getenv(
+    "DATABASE_URL",
+    "postgresql+asyncpg://postgres:secret@db:5432/postgres",
+)
 
-engine = create_async_engine(DATABASE_URL, echo=False, future=True)
-async_session = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
+# async engine & session factory
+engine = create_async_engine(
+    DATABASE_URL,
+    echo=False,
+    future=True,
+)
 
-async def get_db() -> AsyncSession:
+async_session = async_sessionmaker(
+    bind=engine,
+    class_=AsyncSession,
+    expire_on_commit=False,
+)
+
+# this is the Base your models import
+Base = declarative_base()
+
+async def get_db() -> AsyncGenerator[AsyncSession, None]:
+    """fastapi dependency that yields an async session."""
     async with async_session() as session:
         yield session

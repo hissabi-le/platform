@@ -3,12 +3,22 @@ services:
     build:
       context: ./backend/api
       dockerfile: Dockerfile
-    command: uvicorn src.main:app --host 0.0.0.0 --port 8000
+    command: uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload
+    volumes:
+      - ./backend/api/src:/app/src
+      - ./backend/api/alembic:/app/alembic
+      - ./backend/api/tests:/app/tests
     ports:
       - "8000:8000"
     depends_on:
       - db
       - redis
+    environment:
+      # point at the 'db' service in this compose file
+      - DATABASE_URL=postgresql+asyncpg://postgres:secret@db:5432/postgres
+      # ensure your stripe & secret envs are set, too
+      - SECRET=${SECRET:-changeme}
+      - STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET:-}
 
   worker:
     build:

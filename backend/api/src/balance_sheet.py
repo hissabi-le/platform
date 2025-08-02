@@ -1,27 +1,79 @@
 import logging
+import math
+from typing import Iterable, Mapping
+
 logger = logging.getLogger(__name__)
 
-def generate_balance_sheet(df):
+
+def _iter_rows(data: Iterable[Mapping]):
+    """Yield row-like mappings from a variety of inputs.
+
+    The original implementation expected a pandas ``DataFrame`` and used
+    ``DataFrame.iterrows``.  The tests in this kata run in a minimal
+    environment without pandas, so this helper accepts either a DataFrame or
+    any iterable of mappings (e.g. ``list`` of ``dict``).
     """
-    Generate a balance sheet structure from a cleaned DataFrame of accounts and amounts.
-    Returns a dictionary with Assets, Liabilities, Equity sections and totals.
+
+    if hasattr(data, "iterrows"):
+        for _, row in data.iterrows():  # pragma: no cover - exercised when pandas installed
+            yield row
+    else:
+        for row in data:
+            yield row
+
+
+def _is_nan(value: object) -> bool:
+    """Return True if ``value`` is a NaN float."""
+
+    return isinstance(value, float) and math.isnan(value)
+
+
+def generate_balance_sheet(df: Iterable[Mapping]):
+    """Generate a balance sheet structure from cleaned account rows.
+
+    ``df`` may be a pandas ``DataFrame`` or any iterable of mappings with the
+    keys ``"Account"`` and ``"Amount"``.
     """
-    assets = {}
-    liabilities = {}
-    equity = {}
-    asset_keys = ["cash", "receivable", "inventory", "asset", "accumulated", "prepaid",
-                  "investment", "property", "equipment", "land", "building"]
-    liab_keys = ["payable", "debt", "loan", "accrued", "liability", "tax", "bond", "deferred"]
+
+    assets: dict[str, float] = {}
+    liabilities: dict[str, float] = {}
+    equity: dict[str, float] = {}
+
+    asset_keys = [
+        "cash",
+        "receivable",
+        "inventory",
+        "asset",
+        "accumulated",
+        "prepaid",
+        "investment",
+        "property",
+        "equipment",
+        "land",
+        "building",
+    ]
+    liab_keys = [
+        "payable",
+        "debt",
+        "loan",
+        "accrued",
+        "liability",
+        "tax",
+        "bond",
+        "deferred",
+    ]
     equity_keys = ["equity", "capital", "stock", "retained", "earnings", "dividend"]
-    
-    for _, row in df.iterrows():
+
+    for row in _iter_rows(df):
         acct_name = str(row["Account"]).strip()
         amt = row["Amount"]
-        if amt is None or (isinstance(amt, float) and pd.isna(amt)):
+        if amt is None or _is_nan(amt):
             continue  # skip missing amounts
-        if abs(amt) < 1e-9:
+        if isinstance(amt, (int, float)) and abs(amt) < 1e-9:
             continue  # skip zero-valued accounts to avoid clutter (optional)
+
         name_lower = acct_name.lower()
+
         # Determine category
         if any(key in name_lower for key in asset_keys):
             category = "Assets"
@@ -33,9 +85,16 @@ def generate_balance_sheet(df):
             # use sign heuristic if no keyword matched
             category = "Assets" if amt >= 0 else "Liabilities"
             # ignore obvious non-balance sheet accounts
-            if "expense" in name_lower or "revenue" in name_lower or "income" in name_lower:
-                logger.info(f"Skipping P&L account '{acct_name}' in balance sheet generation.")
+            if (
+                "expense" in name_lower
+                or "revenue" in name_lower
+                or "income" in name_lower
+            ):
+                logger.info(
+                    "Skipping P&L account '%s' in balance sheet generation.", acct_name
+                )
                 continue
+
         # add to the appropriate category dictionary
         if category == "Assets":
             assets[acct_name] = assets.get(acct_name, 0) + amt
@@ -59,11 +118,10 @@ def generate_balance_sheet(df):
     balanced = abs(total_assets + total_liabilities + total_equity) < 1e-2
 
     # build the final result structure
-    result = {
+    return {
         "Assets": assets,
         "Liabilities": liabilities,
         "Equity": equity,
         "Total Liabilities and Equity": total_liab_and_equity,
-        "Balanced": balanced
+        "Balanced": balanced,
     }
-    return result

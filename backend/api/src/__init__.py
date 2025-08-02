@@ -1,1 +1,1 @@
-#api package
+"""Platform API package."""

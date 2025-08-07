@@ -17,12 +17,13 @@ from src.models import Base  # noqa
 # this is the Alembic Config object, which provides access to the .ini values
 config = context.config
 
-db_url = os.getenv("DATABASE_URL")
+# db_url = os.getenv("DATABASE_URL")
+# if db_url:
+#     # set the sqlalchemy.url in the Alembic config
+#     config.set_main_option("sqlalchemy.url", db_url)
 
-if db_url:
-    # set the sqlalchemy.url in the Alembic config
-    config.set_main_option("sqlalchemy.url", db_url)
-
+db_url = os.getenv("TEST_DATABASE_URL") or os.getenv("DATABASE_URL") or config.get_main_option("sqlalchemy.url")
+config.set_main_option("sqlalchemy.url", db_url)
 
 # set up Python logging per the config file
 if config.config_file_name is not None:

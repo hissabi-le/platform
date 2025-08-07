@@ -25,7 +25,10 @@ RUN pip install --no-cache-dir \
     pandas\
     numpy \
     pytest\
-    pytest-asyncio
+    httpx==0.23.3 \
+    pytest-asyncio\
+    openpyxl \
+    aiosqlite
 
 # copy source + alembic scripts if need migrations at runtime
 COPY src       src

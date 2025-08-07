@@ -16,6 +16,8 @@ services:
     environment:
       # point at the 'db' service in this compose file
       - DATABASE_URL=postgresql+asyncpg://postgres:secret@db:5432/postgres
+
+      - TEST_DATABASE_URL=postgresql+asyncpg://postgres:secret@db:5432/hissabi_test
       # ensure your stripe & secret envs are set, too
       - SECRET=${SECRET:-changeme}
       - STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET:-}

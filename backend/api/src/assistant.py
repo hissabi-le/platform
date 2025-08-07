@@ -21,6 +21,8 @@ def answer_question(balance_data, question):
     # include the balance sheet data as JSON in the user prompt
     data_json = json.dumps(balance_data, indent=2)
     user_prompt = f"Use the following balance sheet data to answer the question.\nBalance Sheet Data:\n```json\n{data_json}\n```\nQuestion: {question}"
+    # make prompt for unit cost, pnl, etc..
+    #could use branches for each type
     user_message = {"role": "user", "content": user_prompt}
     try:
         response = openai.ChatCompletion.create(

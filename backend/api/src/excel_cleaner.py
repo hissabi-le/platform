@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
 import logging
+import re
 
 logger = logging.getLogger(__name__)
 
@@ -34,21 +35,49 @@ def convert_to_numeric(series):
     in: pd.series of raw string data from the excel
     out: pd.series(float) extracted numeric data
     """
-    # replace commas and currency symbols
-    series = series.astype(str).str.replace(',', '', regex=True)
-    series = series.str.replace('$', '', regex=True)
-    series = series.str.replace("LBP", "", regex = True)
-    series = series.str.replace("lbp", "", regex = True)
-    # parentheses for negative values
-    series = series.str.replace(r'\(', '-', regex=True).str.replace(r'\)', '', regex=True)
-    # handle 'Cr'/'Dr' suffixes
-    cr_mask = series.str.contains(r'(?i)cr', regex=True)
-    series.loc[cr_mask] = '-' + series[cr_mask]        # prepend '-' for credits
-    series = series.str.replace(r'(?i)cr', '', regex=True)
-    series = series.str.replace(r'(?i)dr', '', regex=True)
-    # trim and convert to float
-    series = series.str.strip()
-    return pd.to_numeric(series, errors='coerce')
+    def _parse(val) -> float:
+        if pd.isna(val):
+            return np.nan
+        s = str(val).strip()
+        low = s.lower()
+        # treat common “null”s as NaN
+        if low in ("", "na", "n/a", "-", "--"):
+            return np.nan
+
+        sign = 1.0
+
+        # parentheses → negative
+        if re.match(r"^\(.*\)$", s):
+            sign *= -1.0
+            s = s.strip("()").strip()
+
+        # trailing credit/debit markers
+        if low.endswith(" cr"):
+            sign *= -1.0
+            s = s[: -3].strip()
+        elif low.endswith("cr"):
+            sign *= -1.0
+            s = s[: -2].strip()
+        elif low.endswith(" dr"):
+            # explicit “dr” is positive so just strip
+            s = s[: -3].strip()
+        elif low.endswith("dr"):
+            s = s[: -2].strip()
+
+        # drop commas, currency symbols, and any non digit/dot/minus
+        s = s.replace(",", "")
+        # remove anything that isn't digit, dot, or minus
+        s = re.sub(r"[^0-9\.\-]", "", s)
+
+        try:
+            num = float(s)
+        except ValueError:
+            return np.nan
+
+        return sign * num
+
+    return series.map(_parse)
+
 
 def process_dataframe(df):
     """

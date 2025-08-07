@@ -1,3 +1,5 @@
+# src/models.py
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -9,13 +11,13 @@ from sqlalchemy import (
     Float,
     ForeignKey,
     Integer,
+    JSON,
     String,
     Text,
     UniqueConstraint,
     func,
     text,
 )
-from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .database import Base
@@ -23,7 +25,7 @@ from .database import Base
 
 class Organisation(Base):
     __tablename__ = "organisations"
-    __table_args__ = (UniqueConstraint("name", name="uq_organisations_name"),)
+    # __table_args__ = (UniqueConstraint("name", name="uq_organisations_name"),)
 
     id:            Mapped[int]              = mapped_column(primary_key=True)
     name:          Mapped[str]              = mapped_column(String(255), nullable=False)
@@ -101,7 +103,7 @@ class Upload(Base):
                                       )
     status:       Mapped[str]        = mapped_column(String(50),   nullable=False)
 
-    organisation: Mapped[Organisation]    = relationship("Organisation",  back_populates="uploads")
+    organisation:  Mapped[Organisation]    = relationship("Organisation",   back_populates="uploads")
     ingestion_runs: Mapped[List[IngestionRun]] = relationship("IngestionRun", back_populates="upload")
     transactions:   Mapped[List[Transaction]]  = relationship("Transaction",  back_populates="upload")
     documents:      Mapped[List[Document]]     = relationship("Document",     back_populates="upload")
@@ -145,8 +147,8 @@ class Transaction(Base):
     currency:      Mapped[str]        = mapped_column(String(10), nullable=False)
     description:   Mapped[Optional[str]]  = mapped_column(Text, nullable=True)
     metadata_json: Mapped[Any]        = mapped_column(
-                                           JSONB,
-                                           server_default=text("'{}'::jsonb"),
+                                           JSON,
+                                           default=dict,
                                            nullable=False,
                                        )
 
@@ -157,8 +159,8 @@ class Transaction(Base):
 class Document(Base):
     __tablename__ = "documents"
 
-    id:            Mapped[int]         = mapped_column(primary_key=True)
-    org_id:        Mapped[int]         = mapped_column(
+    id:            Mapped[int]          = mapped_column(primary_key=True)
+    org_id:        Mapped[int]          = mapped_column(
                                            ForeignKey("organisations.id", ondelete="CASCADE"),
                                            nullable=False,
                                        )
@@ -166,17 +168,17 @@ class Document(Base):
                                            ForeignKey("uploads.id", ondelete="SET NULL"),
                                            nullable=True,
                                        )
-    doc_type:      Mapped[str]         = mapped_column(Text,    nullable=False)
-    filename:      Mapped[str]         = mapped_column(Text,    nullable=False)
-    content_type:  Mapped[str]         = mapped_column(Text,    nullable=False)
-    storage_path:  Mapped[str]         = mapped_column(Text,    nullable=False)
-    size_bytes:    Mapped[int]         = mapped_column(BigInteger, nullable=False)
-    created_at:    Mapped[datetime]    = mapped_column(
+    doc_type:      Mapped[str]          = mapped_column(Text,    nullable=False)
+    filename:      Mapped[str]          = mapped_column(Text,    nullable=False)
+    content_type:  Mapped[str]          = mapped_column(Text,    nullable=False)
+    storage_path:  Mapped[str]          = mapped_column(Text,    nullable=False)
+    size_bytes:    Mapped[int]          = mapped_column(BigInteger, nullable=False)
+    created_at:    Mapped[datetime]     = mapped_column(
                                            DateTime(timezone=True),
                                            server_default=func.now(),
                                            nullable=False,
                                        )
-    metadata_json: Mapped[Any]         = mapped_column(JSONB, nullable=True)
+    metadata_json: Mapped[Any]          = mapped_column(JSON, nullable=True)
 
     organisation:  Mapped[Organisation] = relationship("Organisation", back_populates="documents")
     upload:        Mapped[Upload]       = relationship("Upload",       back_populates="documents")

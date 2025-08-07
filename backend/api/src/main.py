@@ -7,6 +7,8 @@ from fastapi_users.authentication import CookieTransport, AuthenticationBackend,
 from fastapi_users_db_sqlalchemy import SQLAlchemyUserDatabase
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
+from fastapi_users_db_sqlalchemy import SQLAlchemyUserDatabase as _SQLAlchemyUserDatabase
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from .database import get_db, async_session, engine
 from .models import Base, User, Document
@@ -57,10 +59,12 @@ def ask_assistant(question: str):
     return {"question": question, "answer": answer}
 
 # override SQLAlchemyUserDatabase.create to ignore safe=True
-class UserDatabase(SQLAlchemyUserDatabase[int, User]):
-    async def create(self, *args, **kwargs):
+class UserDatabase(_SQLAlchemyUserDatabase[User, int]):
+    async def create(self, create_dict, safe: bool = False, **kwargs):
+        # remove any extraneous kwargs
         kwargs.pop("safe", None)
-        return await super().create(*args, **kwargs)
+        kwargs.pop("request", None)
+        return await super().create(create_dict, safe = False)
 
 async def get_user_db() -> UserDatabase:
     async with async_session() as session:
@@ -81,7 +85,7 @@ auth_backend = AuthenticationBackend(
 
 fastapi_users = FastAPIUsers[User, int](
     get_user_db,
-    [auth_backend],
+    [auth_backend]
 )
 
 current_user = fastapi_users.current_user(active=True)
@@ -131,7 +135,7 @@ def get_current_active_user(allowed_roles: List[str] | None = None):
         return user
     return dependency
 
-async def require_plan(plan_name: str):
+def require_plan(plan_name: str):
     async def dep(
         user: User = Depends(get_current_active_user()),
         db: AsyncSession = Depends(get_db),

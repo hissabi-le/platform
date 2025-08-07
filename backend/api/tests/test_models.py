@@ -1,6 +1,7 @@
 import asyncio
 
 import pytest
+import pytest_asyncio
 
 sqlalchemy = pytest.importorskip("sqlalchemy")
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
@@ -11,7 +12,7 @@ except Exception as exc:  # pragma: no cover - handled via skip
     pytest.skip(f"Required dependencies not installed: {exc}", allow_module_level=True)
 
 
-@pytest.fixture()
+@pytest_asyncio.fixture(scope = "module")
 async def session() -> AsyncSession:
     engine = create_async_engine("sqlite+aiosqlite:///:memory:")
     async_session = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)

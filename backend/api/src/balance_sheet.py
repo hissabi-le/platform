@@ -71,9 +71,7 @@ def generate_balance_sheet(df: Iterable[Mapping]):
             continue  # skip missing amounts
         if isinstance(amt, (int, float)) and abs(amt) < 1e-9:
             continue  # skip zero-valued accounts to avoid clutter (optional)
-
         name_lower = acct_name.lower()
-
         # Determine category
         if any(key in name_lower for key in asset_keys):
             category = "Assets"

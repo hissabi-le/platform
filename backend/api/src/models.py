@@ -1,8 +1,8 @@
 # src/models.py
-
 from __future__ import annotations
 
 from datetime import datetime
+from decimal import Decimal
 from typing import Any, List, Optional
 
 from sqlalchemy import (
@@ -15,6 +15,8 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    Index,
+    Numeric,
     func,
     text,
 )
@@ -35,11 +37,11 @@ class Organisation(Base):
                                               nullable=False,
                                           )
 
-    users:         Mapped[List[User]]       = relationship("User",         back_populates="organisation")
-    subscriptions: Mapped[List[Subscription]] = relationship("Subscription", back_populates="organisation")
-    uploads:       Mapped[List[Upload]]     = relationship("Upload",       back_populates="organisation")
-    transactions:  Mapped[List[Transaction]] = relationship("Transaction",  back_populates="organisation")
-    documents:     Mapped[List[Document]]   = relationship("Document",     back_populates="organisation")
+    users:         Mapped[List["User"]]         = relationship("User",         back_populates="organisation")
+    subscriptions: Mapped[List["Subscription"]] = relationship("Subscription", back_populates="organisation")
+    uploads:       Mapped[List["Upload"]]       = relationship("Upload",       back_populates="organisation")
+    transactions:  Mapped[List["Transaction"]]  = relationship("Transaction",  back_populates="organisation")
+    documents:     Mapped[List["Document"]]     = relationship("Document",     back_populates="organisation")
 
 
 class User(Base):
@@ -61,7 +63,7 @@ class User(Base):
                                               nullable=False,
                                           )
 
-    organisation:     Mapped[Organisation] = relationship("Organisation", back_populates="users")
+    organisation:     Mapped["Organisation"] = relationship("Organisation", back_populates="users")
 
 
 class Subscription(Base):
@@ -84,7 +86,7 @@ class Subscription(Base):
                                                   nullable=False,
                                               )
 
-    organisation:          Mapped[Organisation] = relationship("Organisation", back_populates="subscriptions")
+    organisation:          Mapped["Organisation"] = relationship("Organisation", back_populates="subscriptions")
 
 
 class Upload(Base):
@@ -103,10 +105,10 @@ class Upload(Base):
                                       )
     status:       Mapped[str]        = mapped_column(String(50),   nullable=False)
 
-    organisation:  Mapped[Organisation]    = relationship("Organisation",   back_populates="uploads")
-    ingestion_runs: Mapped[List[IngestionRun]] = relationship("IngestionRun", back_populates="upload")
-    transactions:   Mapped[List[Transaction]]  = relationship("Transaction",  back_populates="upload")
-    documents:      Mapped[List[Document]]     = relationship("Document",     back_populates="upload")
+    organisation:   Mapped["Organisation"]     = relationship("Organisation",   back_populates="uploads")
+    ingestion_runs: Mapped[List["IngestionRun"]] = relationship("IngestionRun", back_populates="upload")
+    transactions:   Mapped[List["Transaction"]]  = relationship("Transaction",  back_populates="upload")
+    documents:      Mapped[List["Document"]]     = relationship("Document",     back_populates="upload")
 
 
 class IngestionRun(Base):
@@ -125,7 +127,7 @@ class IngestionRun(Base):
     completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     error_msg:    Mapped[Optional[str]]      = mapped_column(Text, nullable=True)
 
-    upload:       Mapped[Upload]     = relationship("Upload", back_populates="ingestion_runs")
+    upload:       Mapped["Upload"]   = relationship("Upload", back_populates="ingestion_runs")
 
 
 class Transaction(Base):
@@ -152,8 +154,8 @@ class Transaction(Base):
                                            nullable=False,
                                        )
 
-    organisation:  Mapped[Organisation] = relationship("Organisation", back_populates="transactions")
-    upload:        Mapped[Upload]       = relationship("Upload",       back_populates="transactions")
+    organisation:  Mapped["Organisation"] = relationship("Organisation", back_populates="transactions")
+    upload:        Mapped["Upload"]       = relationship("Upload",       back_populates="transactions")
 
 
 class Document(Base):
@@ -180,5 +182,49 @@ class Document(Base):
                                        )
     metadata_json: Mapped[Any]          = mapped_column(JSON, nullable=True)
 
-    organisation:  Mapped[Organisation] = relationship("Organisation", back_populates="documents")
-    upload:        Mapped[Upload]       = relationship("Upload",       back_populates="documents")
+    organisation:  Mapped["Organisation"] = relationship("Organisation", back_populates="documents")
+    upload:        Mapped["Upload"]       = relationship("Upload",       back_populates="documents")
+
+
+# -----------------------------
+# Inventory (new)
+# -----------------------------
+class InventoryItem(Base):
+    __tablename__ = "inventory_items"
+
+    id:       Mapped[int]      = mapped_column(primary_key=True)
+    org_id:   Mapped[int]      = mapped_column(ForeignKey("organisations.id", ondelete="CASCADE"), nullable=False)
+    name:     Mapped[str]      = mapped_column(String(255), nullable=False)
+    unit:     Mapped[str]      = mapped_column(String(32),  nullable=False, default="unit")
+    sku:      Mapped[Optional[str]] = mapped_column(String(64))
+    category: Mapped[Optional[str]] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    organisation: Mapped["Organisation"] = relationship("Organisation")
+    movements:    Mapped[List["InventoryMovement"]] = relationship(
+        "InventoryMovement", back_populates="item", cascade="all, delete-orphan"
+    )
+
+    __table_args__ = (
+        UniqueConstraint("org_id", "name", name="uq_invitem_org_name"),
+        Index("ix_invitem_org", "org_id"),
+    )
+
+
+class InventoryMovement(Base):
+    __tablename__ = "inventory_movements"
+
+    id:        Mapped[int]       = mapped_column(primary_key=True)
+    org_id:    Mapped[int]       = mapped_column(ForeignKey("organisations.id", ondelete="CASCADE"), nullable=False)
+    item_id:   Mapped[int]       = mapped_column(ForeignKey("inventory_items.id", ondelete="CASCADE"), nullable=False)
+    ts:        Mapped[datetime]  = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    qty_delta: Mapped[Decimal]   = mapped_column(Numeric(18, 6), nullable=False)
+    unit_cost: Mapped[Optional[Decimal]] = mapped_column(Numeric(18, 4))  # required only on positive deltas
+    memo:      Mapped[Optional[str]]     = mapped_column(String(255))
+
+    item:         Mapped["InventoryItem"] = relationship("InventoryItem", back_populates="movements")
+    organisation: Mapped["Organisation"]  = relationship("Organisation")
+
+    __table_args__ = (
+        Index("ix_invmove_org_item_ts", "org_id", "item_id", "ts"),
+    )

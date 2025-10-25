@@ -55,6 +55,13 @@ PL_KEYWORDS = {
     "utilities", "marketing", "advertising", "admin", "depreciation"
 }
 
+PNL_REVENUE_KEYS = {"revenue", "sales", "income", "turnover", "receipt"}
+PNL_COGS_KEYS = {"cogs", "cost of goods", "cost-of-goods", "inventory cost"}
+PNL_EXPENSE_KEYS = {
+    "expense", "operating", "rent", "salary", "salaries", "wage", "utilities",
+    "marketing", "advertising", "admin", "general", "depreciation", "tax"
+}
+
 # ---------------- main ----------------
 
 def generate_balance_sheet(data: Iterable[Mapping]) -> dict:
@@ -159,3 +166,94 @@ def generate_balance_sheet(data: Iterable[Mapping]) -> dict:
     # Include both views so downstream code/tests can pick their preferred one.
     bs["compat"] = compat
     return bs
+
+
+def _classify_pnl_bucket(name: str, default: str, category: str | None = None) -> str:
+    """
+    Heuristic bucket classifier for P&L rows. Prefers explicit category keywords,
+    falls back to amount sign based defaults.
+    """
+    lower = name.lower()
+    cat_lower = (category or "").lower()
+
+    def _match(keys: set[str]) -> bool:
+        return any(key in lower for key in keys) or any(key in cat_lower for key in keys)
+
+    if _match(PNL_REVENUE_KEYS):
+        return "revenue"
+    if _match(PNL_COGS_KEYS):
+        return "cogs"
+    if _match(PNL_EXPENSE_KEYS):
+        return "expense"
+    return default
+
+
+def generate_pnl(data: Iterable[Mapping]) -> dict:
+    """
+    Aggregate a profit & loss structure from transaction-like rows.
+    Expected fields include 'Account'/'account', 'Category'/'category', and 'Amount'/'amount'.
+    Unknown columns gracefully fall back, keeping this usable with minimal inputs.
+    """
+    revenue_total = 0.0
+    cogs_total = 0.0
+    expenses: dict[str, float] = {}
+
+    for row in _iter_rows(data):
+        name = _get_ci(row, "Account", "account", "Category", "category", "Description", "description", default="")
+        name = str(name).strip()
+        if not name:
+            continue
+
+        amount = _get_ci(row, "Amount", "amount", default=None)
+        if amount is None or _is_nan(amount):
+            continue
+        try:
+            amount_val = float(amount)
+        except Exception:
+            continue
+        if abs(amount_val) < 1e-9:
+            continue
+
+        category = _get_ci(row, "Category", "category", default=None)
+        default_bucket = "revenue" if amount_val >= 0 else "expense"
+        bucket = _classify_pnl_bucket(name, default_bucket, category=str(category) if category else None)
+
+        if bucket == "revenue":
+            revenue_total += amount_val
+        elif bucket == "cogs":
+            cogs_total += abs(amount_val)
+        else:
+            expenses[name] = expenses.get(name, 0.0) + abs(amount_val)
+
+    gross_profit = revenue_total - cogs_total
+    total_expenses = sum(expenses.values())
+    net_income = gross_profit - total_expenses
+
+    return {
+        "revenue": revenue_total,
+        "cogs": cogs_total,
+        "gross_profit": gross_profit,
+        "expenses": expenses,
+        "total_expenses": total_expenses,
+        "net_income": net_income,
+    }
+
+
+def compute_roi(pnl: Mapping[str, float]) -> dict:
+    """
+    Basic ROI helper derived from the generated P&L:
+    ROI = Net Income / (COGS + Operating Expenses) when denominator > 0.
+    """
+    revenue = float(pnl.get("revenue", 0.0) or 0.0)
+    cogs = float(pnl.get("cogs", 0.0) or 0.0)
+    total_expenses = float(pnl.get("total_expenses", 0.0) or 0.0)
+    net_income = float(pnl.get("net_income", revenue - cogs - total_expenses))
+
+    investment = cogs + total_expenses
+    roi_value = net_income / investment if investment > 0 else None
+
+    return {
+        "net_income": net_income,
+        "total_investment": investment,
+        "roi": roi_value,
+    }

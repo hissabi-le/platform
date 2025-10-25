@@ -25,7 +25,7 @@ async def setup_data():
         org = Organisation(name="org")
         session.add(org)
         await session.flush()
-        session.add(Subscription(org_id=org.id, stripe_subscription_id="sub", plan="core", status="active"))
+        session.add(Subscription(org_id=org.id, stripe_subscription_id="sub", plan="starter", status="active"))
         user = User(org_id=org.id, email="a@test.com", hashed_password="x", role="user")
         session.add(user)
         await session.commit()

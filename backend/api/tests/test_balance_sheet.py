@@ -5,7 +5,7 @@ try:  # pragma: no cover - optional dependency
 except ModuleNotFoundError:  # pragma: no cover - handled in tests
     pd = None
 
-from src.balance_sheet import generate_balance_sheet
+from src.balance_sheet import generate_balance_sheet, generate_pnl, compute_roi
 if pd:
     from src.excel_cleaner import convert_to_numeric
 
@@ -31,11 +31,12 @@ def test_balance_sheet_generation_balanced():
         {"Account": "Common Stock", "Amount": -1200},
     ]
     result = generate_balance_sheet(data)
-    assert result["Assets"]["Total Assets"] == 1500
-    assert result["Liabilities"]["Total Liabilities"] == -300
-    assert result["Equity"]["Total Equity"] == -1200
-    assert result["Total Liabilities and Equity"] == -1500
-    assert result["Balanced"] is True
+    compat = result["compat"]
+    assert compat["Assets"]["Total Assets"] == 1500
+    assert compat["Liabilities"]["Total Liabilities"] == 300
+    assert compat["Equity"]["Total Equity"] == 1500
+    assert compat["Total Liabilities and Equity"] == 1500
+    assert compat["Balanced"] is True
 
 
 def test_balance_sheet_generation_unbalanced():
@@ -44,10 +45,10 @@ def test_balance_sheet_generation_unbalanced():
         {"Account": "Loan Payable", "Amount": -600},
     ]
     result = generate_balance_sheet(data)
-    assert result["Balanced"] is False
-    total_assets = result["Assets"]["Total Assets"]
-    total_liab_equity = result["Total Liabilities and Equity"]
-    assert abs(total_assets + total_liab_equity) > 1e-2
+    assert result["balanced"] is False
+    total_assets = result["totals"]["assets"]
+    total_liab_equity = result["totals"]["liabilities"] + result["totals"]["equity"]
+    assert abs(total_assets - total_liab_equity) > 1e-2
 
 
 def test_balance_sheet_zero_and_missing():
@@ -58,5 +59,22 @@ def test_balance_sheet_zero_and_missing():
     ]
     result = generate_balance_sheet(data)
     # Only the loan should remain
-    assert "Cash" not in result["Assets"]
-    assert result["Liabilities"]["Loan Payable"] == -100
+    assert "Cash" not in result["assets"]
+    assert result["liabilities"]["Loan Payable"] == 100
+
+
+def test_generate_pnl_and_roi():
+    rows = [
+        {"Account": "Sales Revenue", "Amount": 1000},
+        {"Account": "Cost of Goods Sold", "Amount": -400},
+        {"Account": "Rent Expense", "Amount": -200},
+    ]
+    pnl = generate_pnl(rows)
+    assert pnl["revenue"] == 1000
+    assert pnl["cogs"] == 400
+    assert pnl["total_expenses"] == 200
+    assert pytest.approx(pnl["net_income"]) == 400
+
+    roi = compute_roi(pnl)
+    assert roi["total_investment"] == 600
+    assert pytest.approx(roi["roi"]) == pytest.approx(400 / 600)

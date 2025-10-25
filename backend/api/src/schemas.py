@@ -191,6 +191,10 @@ class DocumentRead(BaseModel):
     model_config = ORM_CONFIG
 
 
+class DocumentDetail(DocumentRead):
+    url: Optional[str] = None
+
+
 # --------------------------------------------------------------------
 # Inventory
 # --------------------------------------------------------------------
@@ -223,6 +227,29 @@ class InventorySummaryRow(BaseModel):
     unit: UnitStr
     on_hand: float
     avg_unit_cost: Optional[float] = None  # outputs are computed server-side as floats
+
+
+class InventoryMovementRow(BaseModel):
+    ts: datetime
+    quantity: float
+    type: Literal["in", "out"]
+    ref: Optional[str] = None
+
+
+# --------------------------------------------------------------------
+# Uploads exposed via API
+# --------------------------------------------------------------------
+class UploadListRow(BaseModel):
+    id: Id
+    filename: MedStr
+    status: Literal["pending", "processing", "done", "error"]
+    uploaded_at: datetime
+
+
+class UploadCreateResponse(BaseModel):
+    id: Id
+    status: Literal["pending", "processing", "done", "error"]
+    document_id: Optional[Id] = None
 
 
 # --------------------------------------------------------------------

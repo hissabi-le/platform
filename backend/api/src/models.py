@@ -217,6 +217,10 @@ class InventoryMovement(Base):
     id:        Mapped[int]       = mapped_column(primary_key=True)
     org_id:    Mapped[int]       = mapped_column(ForeignKey("organisations.id", ondelete="CASCADE"), nullable=False)
     item_id:   Mapped[int]       = mapped_column(ForeignKey("inventory_items.id", ondelete="CASCADE"), nullable=False)
+    ref_document_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("documents.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     ts:        Mapped[datetime]  = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     qty_delta: Mapped[Decimal]   = mapped_column(Numeric(18, 6), nullable=False)
     unit_cost: Mapped[Optional[Decimal]] = mapped_column(Numeric(18, 4))  # required only on positive deltas
@@ -224,6 +228,7 @@ class InventoryMovement(Base):
 
     item:         Mapped["InventoryItem"] = relationship("InventoryItem", back_populates="movements")
     organisation: Mapped["Organisation"]  = relationship("Organisation")
+    document:     Mapped[Optional["Document"]] = relationship("Document")
 
     __table_args__ = (
         Index("ix_invmove_org_item_ts", "org_id", "item_id", "ts"),

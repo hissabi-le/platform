@@ -21,6 +21,30 @@ export const handlers = [
     ok({ id: 1, email: "owner@demo.local", org_id: 1 })
   ),
 
+  // uploads
+  http.post("http://localhost:8000/uploads", async ({ request }) => {
+    const formData = await request.formData();
+    const file = formData.get("file");
+    if (!file) {
+      return new HttpResponse("Bad Request", { status: 400 });
+    }
+    return HttpResponse.json(
+      { id: 1001, status: "done", document_id: 21 },
+      { status: 201 }
+    );
+  }),
+
+  http.get("http://localhost:8000/uploads", () =>
+    ok([
+      {
+        id: 1001,
+        filename: "inventory.xlsx",
+        status: "done",
+        uploaded_at: new Date().toISOString(),
+      },
+    ])
+  ),
+
   // documents
   http.get("http://localhost:8000/documents", () =>
     ok([
@@ -33,11 +57,44 @@ export const handlers = [
     ])
   ),
 
+  http.get("http://localhost:8000/documents/:id", ({ params }) =>
+    ok({
+      id: Number(params.id),
+      org_id: 1,
+      upload_id: 1001,
+      doc_type: "generic",
+      filename: "balance_sheet_2025-09-01.pdf",
+      content_type: "application/pdf",
+      storage_path: "/mock/path",
+      size_bytes: 12345,
+      created_at: new Date().toISOString(),
+      metadata_json: {},
+      url: null,
+    })
+  ),
+
   // inventory
   http.get("http://localhost:8000/inventory/summary", () =>
     ok([
       { item_id: 101, name: "Chicken", unit: "kg", qty: 10, avg_cost: 4.2 },
       { item_id: 102, name: "Eggs", unit: "dozen", qty: 3, avg_cost: 2.1 },
+    ])
+  ),
+
+  http.get("http://localhost:8000/inventory/items/:id/movements", ({ params }) =>
+    ok([
+      {
+        ts: new Date().toISOString(),
+        quantity: 10,
+        type: "in",
+        ref: "Initial stock",
+      },
+      {
+        ts: new Date().toISOString(),
+        quantity: -2,
+        type: "out",
+        ref: "Sale #123",
+      },
     ])
   ),
 

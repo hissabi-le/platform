@@ -31,10 +31,10 @@ client = TestClient(app)
 
 
 def test_register_and_login():
-    data = {"email": "user@test.com", "password": "secret", "org_id": 1, "role": "user"}
+    data = {"email": "user@test.com", "password": "secret123", "org_name": "Test Org"}
     r = client.post("/auth/register", json=data)
     assert r.status_code == 201
-    r = client.post("/auth/login", data={"username": data["email"], "password": data["password"]})
+    r = client.post("/auth/login", json={"email": data["email"], "password": data["password"]})
     assert r.status_code == 200
-    r = client.post("/auth/login", data={"username": data["email"], "password": "wrong"})
-    assert r.status_code == 400
+    r = client.post("/auth/login", json={"email": data["email"], "password": "wrong"})
+    assert r.status_code == 401

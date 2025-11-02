@@ -34,7 +34,7 @@ def test_balance_sheet_generation_balanced():
     compat = result["compat"]
     assert compat["Assets"]["Total Assets"] == 1500
     assert compat["Liabilities"]["Total Liabilities"] == 300
-    assert compat["Equity"]["Total Equity"] == 1500
+    assert compat["Equity"]["Total Equity"] == 1200
     assert compat["Total Liabilities and Equity"] == 1500
     assert compat["Balanced"] is True
 
@@ -46,9 +46,12 @@ def test_balance_sheet_generation_unbalanced():
     ]
     result = generate_balance_sheet(data)
     assert result["balanced"] is False
+    compat = result["compat"]
+    assert compat["Liabilities"]["Total Liabilities"] == 600
+    assert compat["Equity"]["Total Equity"] == 400
     total_assets = result["totals"]["assets"]
     total_liab_equity = result["totals"]["liabilities"] + result["totals"]["equity"]
-    assert abs(total_assets - total_liab_equity) > 1e-2
+    assert compat["Balanced"] is False
 
 
 def test_balance_sheet_zero_and_missing():

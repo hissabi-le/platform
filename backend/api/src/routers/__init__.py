@@ -1,0 +1,5 @@
+"""FastAPI route modules."""
+
+from . import analytics  # noqa: F401
+from . import auth  # noqa: F401
+from . import inventory  # noqa: F401

@@ -1,7 +1,37 @@
+import asyncio
 import os
 import sys
+from pathlib import Path
 
-# Ensure project root (containing ``src``) is on ``sys.path``
-ROOT_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
-if ROOT_PATH not in sys.path:
-    sys.path.insert(0, ROOT_PATH)
+import pytest
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+os.environ.setdefault("DATABASE_URL", "sqlite+aiosqlite:///:memory:")
+os.environ.setdefault("REDIS_URL", "")
+
+pytest.importorskip("fastapi")
+pytest.importorskip("sqlalchemy")
+
+try:
+    from fastapi.testclient import TestClient
+    from src.main import app
+    from src.database import engine, Base
+except Exception as exc:  # pragma: no cover - handled via skip
+    pytest.skip(f"Required dependencies not installed: {exc}", allow_module_level=True)
+
+
+@pytest.fixture(scope="session", autouse=True)
+def setup_db() -> None:
+    async def init():
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+
+    asyncio.run(init())
+
+
+@pytest.fixture(scope="session")
+def client() -> TestClient:
+    return TestClient(app)

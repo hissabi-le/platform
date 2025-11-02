@@ -4,24 +4,11 @@ from typing import Optional
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from passlib.context import CryptContext
 
-from ..models import User, Organisation
-
-_pwd = CryptContext(schemes=["bcrypt"], deprecated="auto")
+from ..models import Organisation, User
+from ..security import hash_password
 
 ALLOWED_ROLES = {"user", "admin"}
-
-
-def hash_password(p: str) -> str:
-    return _pwd.hash(p)
-
-
-def verify_password(plain: str, hashed: str) -> bool:
-    try:
-        return _pwd.verify(plain, hashed)
-    except Exception:
-        return False
 
 
 class UserRepo:

@@ -1,44 +1,63 @@
 # backend/api/src/database.py
 from __future__ import annotations
 
-import os
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator, AsyncIterator, Optional
 
 from sqlalchemy import event, text
-from sqlalchemy.engine import make_url, URL
+from sqlalchemy.engine import URL, make_url
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import declarative_base
+from sqlalchemy.pool import StaticPool
+
+from .config import settings
 
 # ------------------------------------------------------------------
 # Configuration
 # ------------------------------------------------------------------
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+asyncpg://postgres:secret@db:5432/postgres")
-READ_DATABASE_URL = os.getenv("READ_DATABASE_URL")  # optional read replica
+DATABASE_URL = settings.database_url
+READ_DATABASE_URL = settings.read_database_url  # optional read replica
 
-DB_POOL_SIZE = int(os.getenv("DB_POOL_SIZE", "10"))
-DB_MAX_OVERFLOW = int(os.getenv("DB_MAX_OVERFLOW", "20"))
-DB_POOL_RECYCLE = int(os.getenv("DB_POOL_RECYCLE", "1800"))  # seconds; helps with LB/proxy idle closes
-DB_POOL_TIMEOUT = int(os.getenv("DB_POOL_TIMEOUT", "30"))    # seconds to wait for a connection
-DB_STATEMENT_TIMEOUT_MS = int(os.getenv("DB_STATEMENT_TIMEOUT_MS", "60000"))  # 60s
-DB_LOCK_TIMEOUT_MS = int(os.getenv("DB_LOCK_TIMEOUT_MS", "5000"))             # 5s
-DB_IDLE_TX_TIMEOUT_MS = int(os.getenv("DB_IDLE_TX_TIMEOUT_MS", "30000"))      # 30s
-DB_ECHO = os.getenv("SQLALCHEMY_ECHO", "0") == "1"
+DB_POOL_SIZE = settings.db_pool_size
+DB_MAX_OVERFLOW = settings.db_max_overflow
+DB_POOL_RECYCLE = settings.db_pool_recycle  # seconds; helps with LB/proxy idle closes
+DB_POOL_TIMEOUT = settings.db_pool_timeout    # seconds to wait for a connection
+DB_STATEMENT_TIMEOUT_MS = settings.db_statement_timeout_ms  # 60s
+DB_LOCK_TIMEOUT_MS = settings.db_lock_timeout_ms             # 5s
+DB_IDLE_TX_TIMEOUT_MS = settings.db_idle_tx_timeout_ms      # 30s
+DB_ECHO = settings.sqlalchemy_echo
 
 # ------------------------------------------------------------------
 # Engine(s) & Session factories
 # ------------------------------------------------------------------
 def _create_engine(url: str):
-    return create_async_engine(
-        url,
-        echo=DB_ECHO,
-        future=True,
-        pool_pre_ping=True,         # recover stale connections
-        pool_size=DB_POOL_SIZE,
-        max_overflow=DB_MAX_OVERFLOW,
-        pool_recycle=DB_POOL_RECYCLE,
-        pool_timeout=DB_POOL_TIMEOUT,
-    )
+    url_obj = make_url(url)
+
+    kwargs: dict = {
+        "echo": DB_ECHO,
+        "future": True,
+    }
+
+    if url_obj.drivername.startswith("sqlite"):
+        kwargs.update(
+            {
+                "pool_pre_ping": False,
+                "poolclass": StaticPool,
+                "connect_args": {"check_same_thread": False},
+            }
+        )
+    else:
+        kwargs.update(
+            {
+                "pool_pre_ping": True,
+                "pool_size": DB_POOL_SIZE,
+                "max_overflow": DB_MAX_OVERFLOW,
+                "pool_recycle": DB_POOL_RECYCLE,
+                "pool_timeout": DB_POOL_TIMEOUT,
+            }
+        )
+
+    return create_async_engine(url, **kwargs)
 
 engine = _create_engine(DATABASE_URL)
 read_engine = _create_engine(READ_DATABASE_URL) if READ_DATABASE_URL else engine
@@ -50,6 +69,18 @@ async_read_session = async_sessionmaker(bind=read_engine, class_=AsyncSession, e
 # Declarative base (imported by models)
 # ------------------------------------------------------------------
 Base = declarative_base()
+
+if settings.database_url.startswith("sqlite+aiosqlite:///:memory:"):
+    _orig_create_all = Base.metadata.create_all
+
+    def _create_all_with_reset(bind=None, *args, **kwargs):
+        actual_bind = bind or kwargs.get("bind")
+        if actual_bind is None:
+            actual_bind = engine.sync_engine
+        Base.metadata.drop_all(bind=actual_bind)
+        return _orig_create_all(bind=actual_bind, *args, **kwargs)
+
+    Base.metadata.create_all = _create_all_with_reset  # type: ignore[assignment]
 
 # ------------------------------------------------------------------
 # Connection tuning per dialect

@@ -102,6 +102,20 @@ class TokenOut(BaseModel):
     token_type: Literal["bearer"] = "bearer"
 
 
+class TokenPair(BaseModel):
+    access_token: str
+    refresh_token: str
+    token_type: Literal["bearer"] = "bearer"
+
+
+class AuthResponse(TokenPair):
+    user: UserOut
+
+
+class TokenRefreshRequest(BaseModel):
+    refresh_token: str
+
+
 # --------------------------------------------------------------------
 # Subscriptions
 # --------------------------------------------------------------------

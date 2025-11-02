@@ -115,51 +115,62 @@ def generate_balance_sheet(data: Iterable[Mapping]) -> dict:
             # sign heuristic fallback
             category = "asset" if amt >= 0 else "liab"
 
-        # Aggregate with positive magnitudes for clarity
         if category == "asset":
             assets[acct_name] = assets.get(acct_name, 0.0) + amt
         elif category == "liab":
-            # store as positive number
-            liabilities[acct_name] = liabilities.get(acct_name, 0.0) + abs(amt)
+            liabilities[acct_name] = liabilities.get(acct_name, 0.0) + amt
         else:
             equity[acct_name] = equity.get(acct_name, 0.0) + amt
 
-    # Compute positive totals
     total_assets = sum(v for v in assets.values() if not _is_nan(v))
-    total_liab = sum(v for v in liabilities.values() if not _is_nan(v))
-    # Close equity to enforce balance
-    closed_equity = total_assets - total_liab
-    equity["Retained Earnings"] = equity.get("Retained Earnings", 0.0) + closed_equity
-    total_equity = sum(v for v in equity.values() if not _is_nan(v))
+    total_liab_signed = sum(v for v in liabilities.values() if not _is_nan(v))
+    total_equity_signed = sum(v for v in equity.values() if not _is_nan(v))
 
-    # Balanced flag (|A - (L + E)| < eps)
-    balanced = abs(total_assets - (total_liab + total_equity)) < 1e-2
+    balance_gap = total_assets + total_liab_signed + total_equity_signed
+    balanced = abs(balance_gap) < 1e-2
+
+    # Display-friendly copies (positive magnitudes)
+    assets_disp = {name: float(value) for name, value in assets.items()}
+    liabs_disp = {name: abs(float(value)) for name, value in liabilities.items()}
+    equity_disp = {name: abs(float(value)) for name, value in equity.items()}
+
+    total_liab_display = sum(liabs_disp.values())
+    total_equity_display = sum(equity_disp.values())
+
+    # When equity rows are absent, fall back to computed residual (positive magnitude).
+    if not equity_disp and not math.isclose(total_assets, 0.0, abs_tol=1e-9):
+        residual = max(total_assets - total_liab_display, 0.0)
+        if residual:
+            equity_disp["Retained Earnings"] = residual
+            total_equity_display = residual
+
+    totals_section = {
+        "assets": total_assets,
+        "liabilities": total_liab_display,
+        "equity": total_equity_display,
+    }
 
     # Lower-case primary structure (API used this shape before)
     bs = {
-        "assets": dict(assets),
-        "liabilities": dict(liabilities),
-        "equity": dict(equity),
-        "totals": {
-            "assets": total_assets,
-            "liabilities": total_liab,
-            "equity": total_equity,
-        },
+        "assets": dict(assets_disp),
+        "liabilities": dict(liabs_disp),
+        "equity": dict(equity_disp),
+        "totals": totals_section,
         "balanced": balanced,
     }
 
     # Capitalized compatibility view (like your original)
-    assets_cap = dict(assets)
-    liabilities_cap = dict(liabilities)
-    equity_cap = dict(equity)
+    assets_cap = dict(assets_disp)
+    liabilities_cap = dict(liabs_disp)
+    equity_cap = dict(equity_disp)
     assets_cap["Total Assets"] = total_assets
-    liabilities_cap["Total Liabilities"] = total_liab
-    equity_cap["Total Equity"] = total_equity
+    liabilities_cap["Total Liabilities"] = total_liab_display
+    equity_cap["Total Equity"] = total_equity_display
     compat = {
         "Assets": assets_cap,
         "Liabilities": liabilities_cap,
         "Equity": equity_cap,
-        "Total Liabilities and Equity": total_liab + total_equity,
+        "Total Liabilities and Equity": total_liab_display + total_equity_display,
         "Balanced": balanced,
     }
 

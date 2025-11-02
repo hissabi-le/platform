@@ -16,9 +16,14 @@ RUN pip install --no-cache-dir \
     asyncpg \
     alembic \
     greenlet \
-    fastapi-users-db-sqlalchemy \
-    fastapi-users[sqlalchemy2]\
+    pydantic-settings \
+    boto3 \
     stripe\
+    passlib[bcrypt] \
+    argon2-cffi \
+    redis \
+    clamd \
+    dramatiq[redis] \
     setuptools \
     wheel\
     openai\

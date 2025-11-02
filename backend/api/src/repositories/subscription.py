@@ -5,6 +5,7 @@ from typing import Optional
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..cache.subscription_cache import subscription_cache
 from ..models import Subscription
 
 
@@ -31,6 +32,7 @@ class SubscriptionRepo:
         sub.status = status
         session.add(sub)
         await session.flush()
+        await subscription_cache.invalidate(org_id)
         return sub
 
     async def set_plan(self, session: AsyncSession, org_id: int, plan: str) -> Optional[Subscription]:
@@ -40,6 +42,7 @@ class SubscriptionRepo:
         sub.plan = plan
         session.add(sub)
         await session.flush()
+        await subscription_cache.invalidate(org_id)
         return sub
 
     async def upsert_from_stripe_event(
@@ -103,4 +106,5 @@ class SubscriptionRepo:
             sub.status = "canceled"
 
         await session.flush()
+        await subscription_cache.invalidate(org_id)
         return sub

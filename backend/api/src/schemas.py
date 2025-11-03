@@ -1,17 +1,12 @@
 # backend/api/src/schemas.py
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, date
 from decimal import Decimal
 from typing import Any, Literal, Optional, Annotated
 
-from pydantic import (
-    BaseModel,
-    ConfigDict,
-    EmailStr,
-    Field,
-    field_validator,
-)
+from email_validator import EmailNotValidError, validate_email as _validate_email
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 # --------------------------------------------------------------------
 # Shared constrained types
@@ -47,6 +42,21 @@ class OrganisationRead(OrganisationBase):
     model_config = ORM_CONFIG
 
 
+# Helper to normalise email values safely across email-validator versions
+def _normalize_email(value: Any) -> str:
+    if value is None:
+        raise ValueError("email is required")
+    email = str(value).strip()
+    try:
+        result = _validate_email(email, check_deliverability=False)
+    except EmailNotValidError as exc:
+        raise ValueError(str(exc)) from exc
+    normalized = getattr(result, "normalized", None)
+    if not normalized and isinstance(result, dict):
+        normalized = result.get("normalized") or result.get("email")
+    return (normalized or email).lower()
+
+
 # --------------------------------------------------------------------
 # Users & Auth
 # --------------------------------------------------------------------
@@ -55,44 +65,44 @@ class UserCreate(BaseModel):
     Public sign-up used by /auth/register.
     We accept org_name here; org_id/role are server-assigned.
     """
-    email: EmailStr
+    email: Annotated[str, Field(min_length=3, max_length=320)]
     password: Annotated[str, Field(min_length=8, max_length=128)]
     org_name: MedStr
 
     @field_validator("email", mode="before")
     @classmethod
-    def _lower_email(cls, v: str) -> str:
-        return v.lower().strip()
+    def _normalize_email(cls, value: Any) -> str:
+        return _normalize_email(value)
 
 
 class UserCreateInternal(BaseModel):
     """
     Admin/provisioning path for creating users inside an existing org.
     """
-    email: EmailStr
+    email: Annotated[str, Field(min_length=3, max_length=320)]
     password: Annotated[str, Field(min_length=8, max_length=128)]
     org_id: Id
     role: Literal["user", "admin"] = "user"
 
     @field_validator("email", mode="before")
     @classmethod
-    def _lower_email(cls, v: str) -> str:
-        return v.lower().strip()
+    def _normalize_email(cls, value: Any) -> str:
+        return _normalize_email(value)
 
 
 class UserLogin(BaseModel):
-    email: EmailStr
+    email: Annotated[str, Field(min_length=3, max_length=320)]
     password: Annotated[str, Field(min_length=1, max_length=128)]
 
     @field_validator("email", mode="before")
     @classmethod
-    def _lower_email(cls, v: str) -> str:
-        return v.lower().strip()
+    def _normalize_email(cls, value: Any) -> str:
+        return _normalize_email(value)
 
 
 class UserOut(BaseModel):
     id: Id
-    email: EmailStr
+    email: str
     org_id: Id
     role: Literal["user", "admin"] = "user"
 
@@ -297,3 +307,166 @@ class AccountingRequest(BaseModel):
         default=True,
         description="If true, overlay LLM-generated docs/scenarios when available.",
     )
+
+
+# --------------------------------------------------------------------
+# Organisation settings
+# --------------------------------------------------------------------
+class OrganisationSettingsBase(BaseModel):
+    total_initial_investment: Money = Field(default=Decimal("0"))
+    starting_cash_balance: Money = Field(default=Decimal("0"))
+    current_assets_value: Money = Field(default=Decimal("0"))
+    default_currency: Annotated[str, Field(min_length=1, max_length=10)] = "USD"
+    default_locale: Annotated[str, Field(min_length=2, max_length=10)] = "en"
+    vat_rate: Optional[Annotated[Decimal, Field(max_digits=5, decimal_places=2)]] = None
+
+    @field_validator(
+        "total_initial_investment",
+        "starting_cash_balance",
+        "current_assets_value",
+        mode="before",
+    )
+    @classmethod
+    def _ensure_non_negative(cls, value: Any) -> Any:
+        if value is None:
+            return value
+        quant = Decimal(str(value))
+        if quant < 0:
+            raise ValueError("value must be non-negative")
+        return quant
+
+
+class OrganisationSettingsRead(OrganisationSettingsBase):
+    id: Id
+    org_id: Id
+    created_at: datetime
+    updated_at: datetime
+    model_config = ORM_CONFIG
+
+
+class OrganisationSettingsUpdate(BaseModel):
+    total_initial_investment: Optional[Money] = None
+    starting_cash_balance: Optional[Money] = None
+    current_assets_value: Optional[Money] = None
+    default_currency: Optional[Annotated[str, Field(min_length=1, max_length=10)]] = None
+    default_locale: Optional[Annotated[str, Field(min_length=2, max_length=10)]] = None
+    vat_rate: Optional[Annotated[Decimal, Field(max_digits=5, decimal_places=2)]] = None
+
+    @field_validator(
+        "total_initial_investment",
+        "starting_cash_balance",
+        "current_assets_value",
+        mode="before",
+    )
+    @classmethod
+    def _ensure_non_negative(cls, value: Any) -> Any:
+        if value is None:
+            return value
+        quant = Decimal(str(value))
+        if quant < 0:
+            raise ValueError("value must be non-negative")
+        return quant
+
+
+# --------------------------------------------------------------------
+# Journal (Information Sheet)
+# --------------------------------------------------------------------
+class JournalEntryBase(BaseModel):
+    entry_type: Literal[
+        "revenue",
+        "cost",
+        "inventory_purchase",
+        "inventory_use",
+        "transfer",
+    ]
+    item_name: Optional[MedStr] = None
+    quantity: Optional[Qty] = None
+    unit: Optional[UnitStr] = None
+    unit_cost: Optional[Money] = None
+    total: Money
+    category: Optional[MedStr] = None
+    vat_percent: Optional[Annotated[Decimal, Field(max_digits=5, decimal_places=2)]] = None
+    vat_included: Optional[bool] = None
+    notes: Optional[LongStr] = None
+    ambiguous: bool = False
+    clarification_question: Optional[LongStr] = None
+    resolved: bool = True
+
+
+class JournalEntryCreate(JournalEntryBase):
+    pass
+
+
+class JournalEntryRead(JournalEntryBase):
+    id: Optional[Id] = None
+    created_at: Optional[datetime] = None
+    model_config = ORM_CONFIG
+
+
+class JournalClarification(BaseModel):
+    entry_id: Optional[Id] = None
+    question: LongStr
+    entry_type: str
+    category: Optional[MedStr] = None
+
+
+class JournalTotals(BaseModel):
+    revenue: Money
+    cost: Money
+    net: Money
+    cumulative_net: Money
+    roi: Optional[float] = None
+
+
+class JournalDayMeta(BaseModel):
+    id: Optional[Id] = None
+    org_id: Id
+    user_id: Optional[Id] = None
+    journal_date: date
+    language: Optional[str] = None
+    parse_status: Literal["pending", "parsed", "needs_review", "error"]
+    total_revenue: Money
+    total_cost: Money
+    net_profit: Money
+    clarification_count: int
+    created_at: datetime
+    updated_at: datetime
+    model_config = ORM_CONFIG
+
+
+class JournalDayRequest(BaseModel):
+    raw_text: Annotated[str, Field(min_length=1)]
+    date: Optional[str] = None
+    commit: bool = True
+
+
+class JournalResolution(BaseModel):
+    entry_id: Id
+    entry_type: Optional[
+        Literal[
+            "revenue",
+            "cost",
+            "inventory_purchase",
+            "inventory_use",
+            "transfer",
+        ]
+    ] = None
+    quantity: Optional[Qty] = None
+    category: Optional[MedStr] = None
+    treat_as_inventory: Optional[bool] = None
+    vat_percent: Optional[Annotated[Decimal, Field(max_digits=5, decimal_places=2)]] = None
+    vat_included: Optional[bool] = None
+    unit: Optional[UnitStr] = None
+    unit_cost: Optional[Money] = None
+    notes: Optional[LongStr] = None
+
+
+class JournalResolveRequest(BaseModel):
+    resolutions: list[JournalResolution]
+
+
+class JournalDayResponse(BaseModel):
+    journal_day: JournalDayMeta
+    entries: list[JournalEntryRead]
+    clarifications: list[JournalClarification]
+    totals: JournalTotals

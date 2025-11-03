@@ -1,12 +1,16 @@
 # src/models.py
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, date
 from decimal import Decimal
+from enum import Enum
 from typing import Any, List, Optional
 
 from sqlalchemy import (
     BigInteger,
+    Boolean,
+    CheckConstraint,
+    Date,
     DateTime,
     Float,
     ForeignKey,
@@ -42,6 +46,13 @@ class Organisation(Base):
     uploads:       Mapped[List["Upload"]]       = relationship("Upload",       back_populates="organisation")
     transactions:  Mapped[List["Transaction"]]  = relationship("Transaction",  back_populates="organisation")
     documents:     Mapped[List["Document"]]     = relationship("Document",     back_populates="organisation")
+    settings:      Mapped["OrganisationSettings"] = relationship(
+        "OrganisationSettings",
+        back_populates="organisation",
+        uselist=False,
+        cascade="all, delete-orphan",
+    )
+    journal_days:  Mapped[List["JournalDay"]] = relationship("JournalDay", back_populates="organisation")
 
 
 class User(Base):
@@ -64,6 +75,7 @@ class User(Base):
                                           )
 
     organisation:     Mapped["Organisation"] = relationship("Organisation", back_populates="users")
+    journal_days:     Mapped[List["JournalDay"]] = relationship("JournalDay", back_populates="user")
 
 
 class Subscription(Base):
@@ -233,3 +245,120 @@ class InventoryMovement(Base):
     __table_args__ = (
         Index("ix_invmove_org_item_ts", "org_id", "item_id", "ts"),
     )
+
+
+# -----------------------------
+# Settings & Journal
+# -----------------------------
+
+
+class OrganisationSettings(Base):
+    __tablename__ = "organisation_settings"
+    __table_args__ = (
+        UniqueConstraint("org_id", name="uq_org_settings_org"),
+        CheckConstraint("total_initial_investment >= 0", name="ck_settings_initial_investment_nonnegative"),
+        CheckConstraint("starting_cash_balance >= 0", name="ck_settings_starting_cash_nonnegative"),
+        CheckConstraint("current_assets_value >= 0", name="ck_settings_assets_nonnegative"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    org_id: Mapped[int] = mapped_column(ForeignKey("organisations.id", ondelete="CASCADE"), nullable=False)
+    total_initial_investment: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False, default=0)
+    starting_cash_balance: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False, default=0)
+    current_assets_value: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False, default=0)
+    default_currency: Mapped[str] = mapped_column(String(10), nullable=False, default="USD")
+    default_locale: Mapped[str] = mapped_column(String(10), nullable=False, default="en")
+    vat_rate: Mapped[Optional[Decimal]] = mapped_column(Numeric(5, 2))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+    organisation: Mapped["Organisation"] = relationship("Organisation", back_populates="settings")
+
+
+class JournalParseStatus(str, Enum):
+    PENDING = "pending"
+    PARSED = "parsed"
+    NEEDS_REVIEW = "needs_review"
+    ERROR = "error"
+
+
+class JournalEntryType(str, Enum):
+    REVENUE = "revenue"
+    COST = "cost"
+    INVENTORY_PURCHASE = "inventory_purchase"
+    INVENTORY_USE = "inventory_use"
+    TRANSFER = "transfer"
+
+
+class JournalDay(Base):
+    __tablename__ = "journal_days"
+    __table_args__ = (
+        UniqueConstraint("org_id", "journal_date", name="uq_journal_org_date"),
+        UniqueConstraint("hash_key", name="uq_journal_hash"),
+        Index("ix_journal_org_date", "org_id", "journal_date"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    org_id: Mapped[int] = mapped_column(ForeignKey("organisations.id", ondelete="CASCADE"), nullable=False)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    journal_date: Mapped[date] = mapped_column(Date, nullable=False)
+    raw_text: Mapped[str] = mapped_column(Text, nullable=False)
+    language: Mapped[Optional[str]] = mapped_column(String(8))
+    parse_status: Mapped[str] = mapped_column(
+        String(16),
+        nullable=False,
+        default=JournalParseStatus.PENDING.value,
+    )
+    total_revenue: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False, default=0)
+    total_cost: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False, default=0)
+    net_profit: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False, default=0)
+    clarification_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    hash_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+    organisation: Mapped["Organisation"] = relationship("Organisation", back_populates="journal_days")
+    user: Mapped[Optional["User"]] = relationship("User", back_populates="journal_days")
+    entries: Mapped[List["JournalEntry"]] = relationship(
+        "JournalEntry",
+        back_populates="journal_day",
+        cascade="all, delete-orphan",
+    )
+
+
+class JournalEntry(Base):
+    __tablename__ = "journal_entries"
+    __table_args__ = (
+        Index("ix_journal_entry_org_day", "org_id", "journal_day_id"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    org_id: Mapped[int] = mapped_column(ForeignKey("organisations.id", ondelete="CASCADE"), nullable=False)
+    journal_day_id: Mapped[int] = mapped_column(ForeignKey("journal_days.id", ondelete="CASCADE"), nullable=False)
+    entry_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    item_name: Mapped[Optional[str]] = mapped_column(String(255))
+    quantity: Mapped[Optional[Decimal]] = mapped_column(Numeric(18, 6))
+    unit: Mapped[Optional[str]] = mapped_column(String(32))
+    unit_cost: Mapped[Optional[Decimal]] = mapped_column(Numeric(18, 4))
+    total: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False)
+    category: Mapped[Optional[str]] = mapped_column(String(100))
+    vat_percent: Mapped[Optional[Decimal]] = mapped_column(Numeric(5, 2))
+    vat_included: Mapped[Optional[bool]] = mapped_column(Boolean)
+    notes: Mapped[Optional[str]] = mapped_column(Text)
+    ambiguous: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    clarification_question: Mapped[Optional[str]] = mapped_column(Text)
+    resolved: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    org: Mapped["Organisation"] = relationship("Organisation")
+    journal_day: Mapped["JournalDay"] = relationship("JournalDay", back_populates="entries")

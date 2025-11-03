@@ -39,6 +39,8 @@ from .rate_limit import enforce_upload_rate_limit
 from .routers import analytics as analytics_router
 from .routers import auth as auth_router
 from .routers import inventory as inventory_router
+from .routers import journal as journal_router
+from .routers import settings as settings_router
 from .security import AuthContext, require_plan
 from .httpx_compat import ensure_async_client_app_support
 from .storage import store_file
@@ -55,6 +57,8 @@ app = FastAPI(title=settings.app_name, version="0.2.0")
 app.include_router(auth_router.router)
 app.include_router(inventory_router.router)
 app.include_router(analytics_router.router)
+app.include_router(settings_router.router)
+app.include_router(journal_router.router)
 
 JWT_SECRET = settings.jwt_secret
 JWT_EXPIRE_MINUTES = settings.jwt_access_minutes

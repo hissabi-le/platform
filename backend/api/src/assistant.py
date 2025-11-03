@@ -1,5 +1,6 @@
 from __future__ import annotations
 import os, json, logging, math, re
+from decimal import Decimal
 from typing import Any, Iterable, Mapping, Optional
 
 try:
@@ -14,6 +15,129 @@ DEFAULT_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 DEFAULT_JSON_MODEL = os.getenv("OPENAI_JSON_MODEL", DEFAULT_MODEL)
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
+ARABIC_DIGITS = str.maketrans("٠١٢٣٤٥٦٧٨٩", "0123456789")
+CURRENCY_TOKENS = {"$", "usd", "eur", "€", "ll", "lbp", "ل.ل"}
+REVENUE_TOKENS = {
+    "sell",
+    "sold",
+    "sale",
+    "revenu",
+    "vente",
+    "vendu",
+    "بيع",
+    "بعت",
+    "حصل",
+    "received",
+    "cash-in",
+}
+COST_TOKENS = {
+    "paid",
+    "pay",
+    "payé",
+    "rent",
+    "salary",
+    "salaries",
+    "wage",
+    "electricity",
+    "water",
+    "internet",
+    "utility",
+    "tax",
+    "parking",
+    "fuel",
+    "fees",
+    "دفع",
+    "ايجار",
+    "فاتورة",
+}
+PURCHASE_TOKENS = {
+    "buy",
+    "bought",
+    "purchase",
+    "purchased",
+    "acheté",
+    "acheter",
+    "اشترى",
+    "شراء",
+    "stocked",
+}
+USE_TOKENS = {
+    "used",
+    "use",
+    "consumed",
+    "consommé",
+    "utilisé",
+    "utiliser",
+    "استعمل",
+    "استهلك",
+}
+TRANSFER_TOKENS = {
+    "transfer",
+    "transferred",
+    "حول",
+    "حوّل",
+    "virement",
+}
+INGREDIENT_KEYWORDS = {
+    "milk",
+    "sugar",
+    "flour",
+    "butter",
+    "coffee",
+    "beans",
+    "tea",
+    "bread",
+    "egg",
+    "chicken",
+    "meat",
+    "rice",
+    "spice",
+    "packaging",
+    "cups",
+    "bags",
+    "boxes",
+    "مواد",
+    "مكونات",
+    "lait",
+    "farine",
+    "beurre",
+}
+FIXED_EXPENSES = {
+    "rent",
+    "electricity",
+    "water",
+    "internet",
+    "salary",
+    "wage",
+    "transport",
+    "fuel",
+    "maintenance",
+    "marketing",
+    "tax",
+    "marketing",
+    "maintenance",
+    "utilité",
+    "loyer",
+}
+UNIT_ALIASES = {
+    "kg": "kg",
+    "kilo": "kg",
+    "kilogram": "kg",
+    "kilogramme": "kg",
+    "g": "g",
+    "gram": "g",
+    "grams": "g",
+    "l": "l",
+    "liter": "l",
+    "litre": "l",
+    "piece": "piece",
+    "pieces": "piece",
+    "pcs": "piece",
+    "dozen": "dozen",
+    "dz": "dozen",
+    "unit": "unit",
+    "units": "unit",
+}
 
 def _coerce_float(x: Any) -> Optional[float]:
     try:
@@ -24,6 +148,206 @@ def _coerce_float(x: Any) -> Optional[float]:
         return float(m.group(1)) if m else None
     except Exception:
         return None
+
+
+def _normalize_language_token(line: str) -> str:
+    return line.translate(ARABIC_DIGITS).lower()
+
+
+def _detect_language(lines: list[str]) -> str:
+    for line in lines:
+        if re.search(r"[\u0600-\u06FF]", line):
+            return "ar"
+    for line in lines:
+        lower = line.lower()
+        if any(word in lower for word in ("bonjour", "merci", "acheté", "vente", "euro")):
+            return "fr"
+    return "en"
+
+
+def _normalize_amount_fragment(fragment: str) -> str:
+    cleaned = fragment.translate(ARABIC_DIGITS)
+    cleaned = cleaned.replace("٬", "").replace(",", "").replace(" ", "")
+    return cleaned
+
+
+def _extract_quantity(line: str) -> tuple[Optional[Decimal], Optional[str], Optional[tuple[int, int]]]:
+    pattern = re.compile(
+        r"(?P<qty>-?\d+(?:[\,\.]\d+)?)\s*(?P<unit>kg|kilograms?|kilo|g|grams?|l|liters?|litres?|piece|pieces|pcs|dozen|dz|unit|units)",
+        re.IGNORECASE,
+    )
+    for match in pattern.finditer(line):
+        qty_raw = _normalize_amount_fragment(match.group("qty"))
+        try:
+            qty = Decimal(qty_raw)
+        except Exception:
+            continue
+        unit_key = match.group("unit").lower()
+        unit = UNIT_ALIASES.get(unit_key, unit_key)
+        return qty, unit, match.span()
+    return None, None, None
+
+
+def _extract_amount(line: str, skip_span: Optional[tuple[int, int]]) -> Optional[Decimal]:
+    candidates: list[tuple[Decimal, int]] = []
+    for match in re.finditer(r"(-?\d+(?:[\,\.]\d+)?)", line):
+        span = match.span()
+        if skip_span and span[0] >= skip_span[0] and span[1] <= skip_span[1]:
+            continue
+        raw = _normalize_amount_fragment(match.group(0))
+        try:
+            amount = Decimal(raw)
+        except Exception:
+            continue
+        candidates.append((amount, span[0]))
+    if not candidates:
+        return None
+    # prefer numbers that are near currency hints
+    best_amount = candidates[-1][0]
+    best_score = -1
+    for amount, pos in candidates:
+        window = line[max(0, pos - 8): pos + 8].lower()
+        score = 0
+        if any(token in window for token in CURRENCY_TOKENS):
+            score += 2
+        if pos > (skip_span[1] if skip_span else -1):
+            score += 1
+        if score > best_score:
+            best_score = score
+            best_amount = amount
+    return best_amount
+
+
+def _detect_vat(line: str) -> tuple[Optional[Decimal], Optional[bool]]:
+    lower = line.lower()
+    if not any(tag in lower for tag in ("vat", "tva", "ضريبة")):
+        return None, None
+    match = re.search(r"(\d{1,2}(?:[\,\.]\d+)?)\s*%", lower)
+    if match:
+        raw = _normalize_amount_fragment(match.group(1))
+        try:
+            return Decimal(raw), None
+        except Exception:
+            pass
+    return None, True
+
+
+def _tokens(line: str) -> list[str]:
+    norm = _normalize_language_token(line)
+    return re.findall(r"[a-z\u0600-\u06FF]+", norm)
+
+
+def _guess_entry_type(tokens: list[str]) -> str:
+    if any(tok in tokens for tok in TRANSFER_TOKENS):
+        return "transfer"
+    if any(tok in tokens for tok in REVENUE_TOKENS):
+        return "revenue"
+    if any(tok in tokens for tok in USE_TOKENS):
+        return "inventory_use"
+    if any(tok in tokens for tok in PURCHASE_TOKENS):
+        return "inventory_purchase"
+    if any(tok in tokens for tok in COST_TOKENS):
+        return "cost"
+    return "cost"
+
+
+def _infer_category(entry_type: str, item_name: Optional[str], tokens: list[str]) -> Optional[str]:
+    lowered_item = (item_name or "").lower()
+    relevant = tokens + lowered_item.split()
+    if entry_type == "revenue":
+        return "Sales"
+    if entry_type == "inventory_purchase":
+        if any(tok in INGREDIENT_KEYWORDS for tok in relevant):
+            return "Ingredients"
+        return None
+    if entry_type == "inventory_use":
+        return "Ingredients"
+    if any(tok in FIXED_EXPENSES for tok in relevant):
+        return "Fixed Expense"
+    return None
+
+
+def _normalize_entry_payload(entry: dict[str, Any]) -> dict[str, Any]:
+    normalised = {
+        "entry_type": entry.get("entry_type"),
+        "item_name": entry.get("item_name"),
+        "quantity": None,
+        "unit": entry.get("unit"),
+        "unit_cost": None,
+        "total": None,
+        "category": entry.get("category"),
+        "vat_percent": None,
+        "vat_included": entry.get("vat_included"),
+        "notes": entry.get("notes"),
+        "ambiguous": bool(entry.get("ambiguous", False)),
+        "clarification_question": entry.get("clarification_question"),
+        "resolved": entry.get("resolved", True),
+    }
+    for key in ("quantity", "unit_cost", "total", "vat_percent"):
+        value = entry.get(key)
+        if value is None:
+            continue
+        try:
+            normalised[key] = Decimal(str(value))
+        except Exception:
+            normalised[key] = None
+            normalised["ambiguous"] = True
+            if not normalised["clarification_question"]:
+                normalised["clarification_question"] = f"unable to parse numeric value for {key}"
+    return normalised
+
+
+def _heuristic_parse(lines: list[str], language: str) -> dict[str, Any]:
+    entries: list[dict[str, Any]] = []
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            continue
+        tokens = _tokens(stripped)
+        entry_type = _guess_entry_type(tokens)
+        qty, unit, qty_span = _extract_quantity(stripped)
+        amount = _extract_amount(stripped, qty_span)
+        vat_percent, vat_included = _detect_vat(stripped)
+
+        item_name = stripped
+        if tokens:
+            # keep phrases excluding verbs for readability
+            item_tokens = [tok for tok in tokens if tok not in REVENUE_TOKENS | COST_TOKENS | PURCHASE_TOKENS | USE_TOKENS | TRANSFER_TOKENS]
+            if item_tokens:
+                item_name = " ".join(item_tokens)
+
+        entry = {
+            "entry_type": entry_type,
+            "item_name": item_name.strip()[:255],
+            "quantity": qty,
+            "unit": unit,
+            "unit_cost": None,
+            "total": amount,
+            "category": _infer_category(entry_type, item_name, tokens),
+            "vat_percent": vat_percent,
+            "vat_included": vat_included,
+            "notes": None,
+            "ambiguous": False,
+            "clarification_question": None,
+            "resolved": True,
+        }
+
+        if entry_type in {"inventory_purchase", "inventory_use"} and qty is None:
+            entry["ambiguous"] = True
+            entry["clarification_question"] = "please provide quantity for inventory movement"
+            entry["resolved"] = False
+        if amount is None and entry_type in {"revenue", "cost"}:
+            entry["ambiguous"] = True
+            entry["clarification_question"] = "please confirm the total amount for this line"
+            entry["resolved"] = False
+        if entry_type == "inventory_purchase" and entry["category"] is None:
+            entry["ambiguous"] = True
+            entry["clarification_question"] = "should this purchase be tracked as inventory or expensed today?"
+            entry["resolved"] = False
+
+        entries.append(_normalize_entry_payload(entry))
+
+    return {"entries": entries, "language": language}
 
 
 class OpenAIClient:
@@ -191,6 +515,97 @@ class OpenAIClient:
         return [{"account": r.get("account", ""), "bucket": guess(r.get("account", ""))} for r in rows if r.get("account")]
 
     # ------------------- financial document generation -------------------
+
+    def parse_journal_lines(self, lines: Iterable[str], locale: Optional[str] = None) -> dict[str, Any]:
+        entries_list = [line.strip() for line in lines if line and line.strip()]
+        detected_language = locale or _detect_language(entries_list)
+        if not entries_list:
+            return {"entries": [], "language": detected_language}
+
+        system_prompt = (
+            "you convert short daily accounting notes into strict json.\n"
+            "understand english, french, and arabic (including arabizi).\n"
+            "allowed entry_type values: revenue, cost, inventory_purchase, inventory_use, transfer.\n"
+            "copy monetary totals exactly as written (do not calculate new totals).\n"
+            "if uncertain, set ambiguous=true, resolved=false, and include a short clarification_question.\n"
+            "provide quantity/unit when explicitly mentioned.\n"
+            "use common categories like Sales, Ingredients, Fixed Expense, Utilities, Wages, Rent when clear, else null.\n"
+            "detect vat or tva mentions and capture vat_percent when numeric.\n"
+            "output strictly in this schema without comments."
+        )
+
+        journal_schema = {
+            "type": "object",
+            "properties": {
+                "language": {"type": "string"},
+                "entries": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "entry_type": {"type": "string"},
+                            "item_name": {"type": ["string", "null"]},
+                            "quantity": {"type": ["number", "null"]},
+                            "unit": {"type": ["string", "null"]},
+                            "unit_cost": {"type": ["number", "null"]},
+                            "total": {"type": ["number", "null"]},
+                            "category": {"type": ["string", "null"]},
+                            "vat_percent": {"type": ["number", "null"]},
+                            "vat_included": {"type": ["boolean", "null"]},
+                            "notes": {"type": ["string", "null"]},
+                            "ambiguous": {"type": "boolean"},
+                            "clarification_question": {"type": ["string", "null"]},
+                            "resolved": {"type": "boolean"},
+                        },
+                        "required": ["entry_type", "total", "ambiguous", "resolved"],
+                        "additionalProperties": False,
+                    },
+                },
+            },
+            "required": ["entries"],
+            "additionalProperties": False,
+        }
+
+        allowed_types = {
+            "revenue",
+            "cost",
+            "inventory_purchase",
+            "inventory_use",
+            "transfer",
+        }
+
+        if self.client:
+            user_payload = json.dumps(
+                {
+                    "lines": entries_list,
+                    "locale": detected_language,
+                },
+                ensure_ascii=False,
+            )
+            llm_entries = self._responses_json(system_prompt, user_payload, journal_schema)
+            if llm_entries:
+                raw_entries = llm_entries[0].get("entries") if isinstance(llm_entries[0], dict) else llm_entries
+                final_entries: list[dict[str, Any]] = []
+                for raw in raw_entries or []:
+                    entry = dict(raw)
+                    entry_type = entry.get("entry_type")
+                    if entry_type not in allowed_types:
+                        entry["entry_type"] = "cost"
+                        entry["ambiguous"] = True
+                        entry["resolved"] = False
+                        entry["clarification_question"] = (
+                            entry.get("clarification_question")
+                            or "unable to map entry type, please review this line"
+                        )
+                    normalised = _normalize_entry_payload(entry)
+                    final_entries.append(normalised)
+                language_value = llm_entries[0].get("language") if isinstance(llm_entries[0], dict) else detected_language
+                return {
+                    "entries": final_entries,
+                    "language": language_value or detected_language,
+                }
+
+        return _heuristic_parse(entries_list, detected_language)
 
     def generate_documents(self, context: dict, request: dict) -> dict:
         """

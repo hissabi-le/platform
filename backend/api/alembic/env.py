@@ -4,6 +4,7 @@ import os
 import sys
 from logging.config import fileConfig
 
+
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 from sqlalchemy.engine import make_url
@@ -14,7 +15,7 @@ sys.path.insert(0, BASE_DIR)
 
 # Import metadata from your models
 from src.models import Base  # noqa: E402
-
+from src import database
 # Alembic Config object (reads alembic.ini)
 config = context.config
 
@@ -36,8 +37,14 @@ def _sync_url_from_env_or_ini() -> str:
     raw = (
         os.getenv("TEST_DATABASE_URL")
         or os.getenv("DATABASE_URL")
+        or getattr(database.settings, "database_url", None)
         or config.get_main_option("sqlalchemy.url")
     )
+    if not raw:
+        user = os.getenv("POSTGRES_USER", "postgres")
+        password = os.getenv("POSTGRES_PASSWORD", "secret")
+        db_name = os.getenv("POSTGRES_DB", "postgres")
+        raw = f"postgresql+psycopg://{user}:{password}@localhost:5432/{db_name}"
     if not raw:
         raise RuntimeError("No DATABASE_URL / TEST_DATABASE_URL / sqlalchemy.url provided")
 

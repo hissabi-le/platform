@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from typing import Iterable
+from decimal import Decimal
+from typing import Iterable, Optional
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, case
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..models import InventoryItem, InventoryMovement
@@ -95,3 +96,36 @@ class InventoryRepo:
         )
         rows = await session.execute(stmt)
         return rows.all()
+
+    async def weighted_average_cost(
+        self,
+        session: AsyncSession,
+        *,
+        org_id: int,
+        item_id: int,
+    ) -> Optional[Decimal]:
+        qty_expr = InventoryMovement.qty_delta
+        value_expr = case(
+            (
+                InventoryMovement.unit_cost.isnot(None),
+                InventoryMovement.qty_delta * InventoryMovement.unit_cost,
+            ),
+            else_=0,
+        )
+        stmt = (
+            select(
+                func.coalesce(func.sum(qty_expr), 0),
+                func.coalesce(func.sum(value_expr), 0),
+            )
+            .where(
+                InventoryMovement.org_id == org_id,
+                InventoryMovement.item_id == item_id,
+            )
+        )
+        qty, total_value = (await session.execute(stmt)).one()
+        if qty is None or qty == 0:
+            return None
+        try:
+            return Decimal(total_value) / Decimal(qty)
+        except Exception:
+            return None

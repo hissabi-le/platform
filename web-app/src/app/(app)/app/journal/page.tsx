@@ -1,23 +1,25 @@
 "use client";
 
-import { FormEvent, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
+import type { FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { toast } from "sonner";
 
-import { api, JournalClarification, JournalDayResponse, OrganisationSettings } from "@/lib/api";
+import { api } from "@/lib/api";
+import type { JournalClarification, JournalDayResponse, OrganisationSettings } from "@/lib/api";
 
 const isoToday = format(new Date(), "yyyy-MM-dd");
 
 type ResolutionDraft = {
-  entry_id?: number | null;
+  entry_id?: number | null | undefined;
   treat_as_inventory: "inventory" | "expense";
   quantity?: string;
   unit?: string;
   unit_cost?: string;
 };
 
-export default function JournalPage(): JSX.Element {
+export default function JournalPage() {
   const qc = useQueryClient();
   const [selectedDate, setSelectedDate] = useState<string>(isoToday);
   const [notes, setNotes] = useState<string>("");
@@ -289,7 +291,7 @@ function ClarificationCard({ clarification, onChange }: ClarificationCardProps) 
 
   return (
     <div className="border rounded-lg p-4 space-y-3">
-******EOF
+      ******EOF
       <div className="flex gap-4 text-sm">
         <label className="flex items-center gap-2">
           <input

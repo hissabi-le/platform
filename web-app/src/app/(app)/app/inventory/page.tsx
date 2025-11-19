@@ -12,7 +12,7 @@ type SelectedItem = {
   unit: string;
 };
 
-export default function InventoryPage(): JSX.Element {
+export default function InventoryPage() {
   const summaryQuery = useQuery({
     queryKey: ["inventory", "summary"],
     queryFn: api.inventory.summary,
@@ -140,7 +140,7 @@ type InventoryCardProps = {
   value: string;
 };
 
-function InventoryCard({ title, value }: InventoryCardProps): JSX.Element {
+function InventoryCard({ title, value }: InventoryCardProps) {
   return (
     <div className="rounded-xl border bg-white p-4 shadow-sm">
       <div className="text-xs uppercase text-gray-500">{title}</div>

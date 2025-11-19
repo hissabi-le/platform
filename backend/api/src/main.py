@@ -54,6 +54,20 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(message)s",
 )
 app = FastAPI(title=settings.app_name, version="0.2.0")
+
+# CORS Configuration
+from fastapi.middleware.cors import CORSMiddleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:3000",  # Next.js dev
+        "https://app.hissabi.com",  # Production frontend
+        settings.frontend_url if hasattr(settings, 'frontend_url') else "*",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 app.include_router(auth_router.router)
 app.include_router(inventory_router.router)
 app.include_router(analytics_router.router)

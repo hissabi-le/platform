@@ -5,11 +5,12 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { toast } from "sonner";
 
-import { api, DocumentListItem } from "@/lib/api";
+import { api } from "@/lib/api";
+import type { DocumentListItem } from "@/lib/api";
 
 type DocumentWithLink = DocumentListItem & { url?: string | null; storage_path?: string };
 
-export default function DocumentsPage(): JSX.Element {
+export default function DocumentsPage() {
   const documentsQuery = useQuery({
     queryKey: ["documents"],
     queryFn: api.documents.list,

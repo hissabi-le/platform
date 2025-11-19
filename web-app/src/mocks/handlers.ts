@@ -72,13 +72,13 @@ const buildMockJournal = (raw: string, date: string): JournalState => {
   const clarifications =
     lower.includes("bought")
       ? [
-          {
-            entry_id: 2,
-            question: "should the milk purchase be tracked as inventory or expensed today?",
-            entry_type: "inventory_purchase",
-            category: "Ingredients",
-          },
-        ]
+        {
+          entry_id: 2,
+          question: "should the milk purchase be tracked as inventory or expensed today?",
+          entry_type: "inventory_purchase",
+          category: "Ingredients",
+        },
+      ]
       : [];
   const entries = [
     {
@@ -104,7 +104,7 @@ const buildMockJournal = (raw: string, date: string): JournalState => {
       total: inventoryCost.toFixed(2),
       category: "Ingredients",
       ambiguous: clarifications.length > 0,
-      clarification_question: clarifications.length ? clarifications[0].question : null,
+      clarification_question: clarifications.length ? clarifications[0]?.question : null,
       resolved: clarifications.length === 0,
       created_at: new Date().toISOString(),
     },

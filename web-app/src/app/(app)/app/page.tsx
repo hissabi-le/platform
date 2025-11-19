@@ -30,7 +30,7 @@ const NAV_ACTIONS: NavAction[] = [
 
 const todayIso = format(new Date(), "yyyy-MM-dd");
 
-export default function AppDashboard(): JSX.Element {
+export default function AppDashboard() {
   const router = useRouter();
   const [range, setRange] = useState<RangeOption>("3m");
   const [journalText, setJournalText] = useState("");

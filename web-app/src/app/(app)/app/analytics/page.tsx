@@ -9,7 +9,7 @@ import { api } from "@/lib/api";
 const RANGE_OPTIONS = ["1y", "6m", "3m", "1m"] as const;
 type RangeOption = (typeof RANGE_OPTIONS)[number];
 
-export default function AnalyticsPage(): JSX.Element {
+export default function AnalyticsPage() {
   const [range, setRange] = useState<RangeOption>("3m");
   const { data, isLoading } = useQuery({
     queryKey: ["analytics-detail", range],
@@ -190,7 +190,7 @@ type AnalyticsCardProps = {
   accent: string;
 };
 
-function AnalyticsCard({ title, value, accent }: AnalyticsCardProps): JSX.Element {
+function AnalyticsCard({ title, value, accent }: AnalyticsCardProps) {
   return (
     <div className="rounded-xl border bg-white p-4 shadow-sm">
       <div className="flex items-center justify-between text-sm text-gray-500">

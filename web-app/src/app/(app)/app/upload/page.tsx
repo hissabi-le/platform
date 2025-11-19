@@ -16,7 +16,7 @@ const ACTIONS = [
   { value: "pnl", label: "Generate profit & loss" },
 ];
 
-export default function UploadPage(): JSX.Element {
+export default function UploadPage() {
   const router = useRouter();
   const [file, setFile] = useState<File | null>(null);
   const [selectedAction, setSelectedAction] = useState("");

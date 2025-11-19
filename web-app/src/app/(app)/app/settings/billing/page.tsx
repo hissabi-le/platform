@@ -6,7 +6,7 @@ import { toast } from "sonner";
 
 import { api } from "@/lib/api";
 
-export default function BillingSettingsPage(): JSX.Element {
+export default function BillingSettingsPage() {
   const settingsQuery = useQuery({ queryKey: ["settings"], queryFn: api.settings.getOrg });
   const [currency, setCurrency] = useState("USD");
   const [locale, setLocale] = useState("en");

@@ -5,6 +5,7 @@ cache
 config
 database
 excel_cleaner
+httpx_compat
 main
 models
 rate_limit
@@ -13,3 +14,4 @@ routers
 schemas
 security
 storage
+tasks

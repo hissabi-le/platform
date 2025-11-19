@@ -157,7 +157,7 @@ class Transaction(Base):
     txn_date:      Mapped[datetime]   = mapped_column(DateTime(timezone=True), nullable=False)
     account_code:  Mapped[str]        = mapped_column(String(50), nullable=False)
     category:      Mapped[str]        = mapped_column(String(100), nullable=False)
-    amount:        Mapped[float]      = mapped_column(Float, nullable=False)
+    amount:        Mapped[Decimal]    = mapped_column(Numeric(18, 4), nullable=False)
     currency:      Mapped[str]        = mapped_column(String(10), nullable=False)
     description:   Mapped[Optional[str]]  = mapped_column(Text, nullable=True)
     metadata_json: Mapped[Any]        = mapped_column(
@@ -218,8 +218,8 @@ class InventoryItem(Base):
     )
 
     __table_args__ = (
-        UniqueConstraint("org_id", "name", name="uq_invitem_org_name"),
-        Index("ix_invitem_org", "org_id"),
+        UniqueConstraint("org_id", "name", "unit", name="uq_item_name_unit_org"),
+        Index("ix_item_org_name", "org_id", "name"),
     )
 
 
@@ -300,6 +300,10 @@ class JournalDay(Base):
     __table_args__ = (
         UniqueConstraint("org_id", "journal_date", name="uq_journal_org_date"),
         UniqueConstraint("hash_key", name="uq_journal_hash"),
+        CheckConstraint(
+            "parse_status IN ('pending','parsed','needs_review','error')",
+            name="ck_journal_status_valid"
+        ),
         Index("ix_journal_org_date", "org_id", "journal_date"),
     )
 
@@ -339,6 +343,10 @@ class JournalDay(Base):
 class JournalEntry(Base):
     __tablename__ = "journal_entries"
     __table_args__ = (
+        CheckConstraint(
+            "entry_type IN ('revenue','cost','inventory_purchase','inventory_use','transfer')",
+            name="ck_journal_entry_type_valid"
+        ),
         Index("ix_journal_entry_org_day", "org_id", "journal_day_id"),
     )
 

@@ -45,8 +45,6 @@ def _sync_url_from_env_or_ini() -> str:
         password = os.getenv("POSTGRES_PASSWORD", "secret")
         db_name = os.getenv("POSTGRES_DB", "postgres")
         raw = f"postgresql+psycopg://{user}:{password}@localhost:5432/{db_name}"
-    if not raw:
-        raise RuntimeError("No DATABASE_URL / TEST_DATABASE_URL / sqlalchemy.url provided")
 
     url = make_url(raw)
     drv = url.drivername

@@ -11,4 +11,5 @@ argon2-cffi>=21.3.0
 redis>=5.0.0
 clamd>=1.0.2
 dramatiq[redis]>=1.15.0
-aiosqlite
+pyjwt>=2.9.0
+httpx<0.28

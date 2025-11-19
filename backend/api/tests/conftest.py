@@ -4,6 +4,7 @@ import sys
 from pathlib import Path
 
 import pytest
+import pytest_asyncio
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -30,6 +31,19 @@ def setup_db() -> None:
             await conn.run_sync(Base.metadata.create_all)
 
     asyncio.run(init())
+
+
+@pytest_asyncio.fixture
+async def async_db_session():
+    """Provide an async database session for testing."""
+    from src.database import async_session
+    
+    async with async_session() as session:
+        try:
+            yield session
+        finally:
+            await session.rollback()
+            await session.close()
 
 
 @pytest.fixture(scope="session")

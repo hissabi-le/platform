@@ -14,11 +14,11 @@ services:
       - db
       - redis
     environment:
-      # point at the 'db' service in this compose file
-      - DATABASE_URL=postgresql+asyncpg://postgres:secret@db:5432/postgres
-
-      - TEST_DATABASE_URL=postgresql+asyncpg://postgres:secret@db:5432/hissabi_test
-      # ensure your stripe & secret envs are set, too
+      - POSTGRES_USER=${POSTGRES_USER:-postgres}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-secret}
+      - POSTGRES_DB=${POSTGRES_DB:-postgres}
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-secret}@db:5432/${POSTGRES_DB:-postgres}
+      - TEST_DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-secret}@db:5432/${TEST_POSTGRES_DB:-hissabi_test}
       - SECRET=${SECRET:-changeme}
       - STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET:-}
 
@@ -34,7 +34,9 @@ services:
   db:
     image: postgres:16-alpine
     environment:
-      POSTGRES_PASSWORD: secret
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-secret}
+      POSTGRES_DB: ${POSTGRES_DB:-postgres}
     volumes:
       - pgdata:/var/lib/postgresql/data
     ports:

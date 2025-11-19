@@ -15,3 +15,5 @@ Requires-Dist: argon2-cffi>=21.3.0
 Requires-Dist: redis>=5.0.0
 Requires-Dist: clamd>=1.0.2
 Requires-Dist: dramatiq[redis]>=1.15.0
+Requires-Dist: pyjwt>=2.9.0
+Requires-Dist: httpx<0.28

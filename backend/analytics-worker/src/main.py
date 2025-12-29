@@ -6,6 +6,21 @@ from analytics_worker.config import settings
 from analytics_worker.logging import configure_logging
 from analytics_worker.tasks import celery_app
 
+# Initialize Sentry for error tracking
+try:
+    import sentry_sdk
+    from sentry_sdk.integrations.celery import CeleryIntegration
+    
+    if settings.sentry_dsn:
+        sentry_sdk.init(
+            dsn=settings.sentry_dsn,
+            environment=settings.environment,
+            integrations=[CeleryIntegration()],
+            traces_sample_rate=0.1,
+        )
+except ImportError:
+    pass  # sentry-sdk not installed
+
 
 def main() -> None:
     configure_logging(settings.log_level)
@@ -23,3 +38,4 @@ def main() -> None:
 
 if __name__ == "__main__":  # pragma: no cover
     main()
+

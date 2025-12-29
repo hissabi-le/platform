@@ -62,7 +62,7 @@ async def analytics_pnl(
                 "expenses": 0.0,
             },
         )
-        amount = t.amount or 0.0
+        amount = float(t.amount or 0.0)
         if amount >= 0:
             entry["revenue"] = float(entry["revenue"]) + amount
         else:

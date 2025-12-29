@@ -21,6 +21,7 @@ transactions_table = Table(
     Column("category", String(100), nullable=False),
     Column("amount", Numeric(18, 4), nullable=False),
     Column("description", Text),
+    Column("account_type", String(20), nullable=False),
 )
 
 
@@ -31,6 +32,7 @@ class TransactionRow:
     category: str
     amount: float
     description: str | None
+    account_type: str
 
     @classmethod
     def from_record(cls, record) -> "TransactionRow":
@@ -43,6 +45,7 @@ class TransactionRow:
             category=record.category or "",
             amount=float(amount),
             description=record.description,
+            account_type=record.account_type or "EXPENSE",
         )
 
 
@@ -67,6 +70,7 @@ async def window_iter(
             transactions_table.c.category,
             transactions_table.c.amount,
             transactions_table.c.description,
+            transactions_table.c.account_type,
         )
         .where(
             transactions_table.c.org_id == org_id,

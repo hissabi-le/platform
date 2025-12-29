@@ -104,12 +104,14 @@ class JournalRepo:
         entries: Sequence[dict],
     ) -> tuple[Decimal, Decimal, Decimal, Decimal, Optional[float]]:
         working = [dict(entry) for entry in entries]
+        settings = await self.settings_repo.ensure(session, org_id)
         await self._apply_inventory_movements(
             session,
             org_id=org_id,
             entries=working,
             day_id=None,
             persist=False,
+            inventory_deduction_mode=getattr(settings, 'inventory_deduction_mode', 'immediate'),
         )
         for original, updated in zip(entries, working):
             original.update(updated)
@@ -180,6 +182,7 @@ class JournalRepo:
         entries: Sequence[dict],
         day_id: Optional[int],
         persist: bool,
+        inventory_deduction_mode: str = "immediate",
     ) -> None:
         item_cache: dict[tuple[str, str], int] = {}
         memo_tag = f"journal:day:{day_id}" if day_id is not None else None
@@ -187,89 +190,141 @@ class JournalRepo:
             if entry.get("ambiguous") or not entry.get("resolved"):
                 continue
             entry_type = entry["entry_type"]
-            if entry_type not in {"inventory_purchase", "inventory_use"}:
-                continue
-            item_name = (entry.get("item_name") or "").strip()
-            if not item_name:
-                continue
-            unit = (entry.get("unit") or "unit").strip()
-            qty = entry.get("quantity")
-            if qty is None:
-                continue
-            qty = Decimal(qty)
-            key = (item_name.lower(), unit.lower())
-            if key not in item_cache:
-                if persist:
-                    item = await self.inventory_repo.upsert_item(
-                        session,
-                        org_id=org_id,
-                        name=item_name,
-                        unit=unit,
-                        sku=None,
-                        category=None,
-                    )
-                    item_cache[key] = item.id
-                else:
-                    existing = (
-                        await session.execute(
-                            select(InventoryItem.id).where(
-                                InventoryItem.org_id == org_id,
-                                InventoryItem.name == item_name,
-                                InventoryItem.unit == unit,
-                            )
+            
+            # Handle inventory_purchase and inventory_use (existing logic)
+            if entry_type in {"inventory_purchase", "inventory_use"}:
+                item_name = (entry.get("item_name") or "").strip()
+                if not item_name:
+                    continue
+                unit = (entry.get("unit") or "unit").strip()
+                qty = entry.get("quantity")
+                if qty is None:
+                    continue
+                qty = Decimal(qty)
+                key = (item_name.lower(), unit.lower())
+                if key not in item_cache:
+                    if persist:
+                        item = await self.inventory_repo.upsert_item(
+                            session,
+                            org_id=org_id,
+                            name=item_name,
+                            unit=unit,
+                            sku=None,
+                            category=None,
                         )
-                    ).scalar_one_or_none()
-                    if existing is None:
+                        item_cache[key] = item.id
+                    else:
+                        existing = (
+                            await session.execute(
+                                select(InventoryItem.id).where(
+                                    InventoryItem.org_id == org_id,
+                                    InventoryItem.name == item_name,
+                                    InventoryItem.unit == unit,
+                                )
+                            )
+                        ).scalar_one_or_none()
+                        if existing is None:
+                            entry["ambiguous"] = True
+                            entry["resolved"] = False
+                            entry["clarification_question"] = (
+                                entry.get("clarification_question")
+                                or "inventory item not found; please create it before recording usage"
+                            )
+                            continue
+                        item_cache[key] = existing
+                item_id = item_cache[key]
+                if entry_type == "inventory_purchase":
+                    unit_cost = entry.get("unit_cost")
+                    total = entry.get("total")
+                    if unit_cost is None and total is not None and qty != 0:
+                        unit_cost = Decimal(total) / qty
+                    unit_cost = _quantize_unit_cost(unit_cost)
+                    entry["unit_cost"] = unit_cost
+                    if persist:
+                        await self.inventory_repo.add_movement(
+                            session,
+                            org_id=org_id,
+                            item_id=item_id,
+                            qty_delta=float(qty),
+                            unit_cost=float(unit_cost) if unit_cost is not None else None,
+                            memo=memo_tag or "journal purchase",
+                            ref_document_id=None,
+                        )
+                elif entry_type == "inventory_use":
+                    unit_cost = entry.get("unit_cost")
+                    if unit_cost is None:
+                        wac = await self.inventory_repo.weighted_average_cost(session, org_id=org_id, item_id=item_id)
+                        unit_cost = wac
+                    unit_cost = _quantize_unit_cost(unit_cost)
+                    if unit_cost is None:
                         entry["ambiguous"] = True
                         entry["resolved"] = False
                         entry["clarification_question"] = (
                             entry.get("clarification_question")
-                            or "inventory item not found; please create it before recording usage"
+                            or "unable to determine inventory cost, please review stock levels"
                         )
                         continue
+                    entry["unit_cost"] = unit_cost
+                    entry["total"] = _quantize_money(unit_cost * qty)
+                    if persist:
+                        await self.inventory_repo.add_movement(
+                            session,
+                            org_id=org_id,
+                            item_id=item_id,
+                            qty_delta=float(-qty),
+                            unit_cost=float(unit_cost),
+                            memo=memo_tag or "journal usage",
+                            ref_document_id=None,
+                        )
+            
+            # Handle revenue entries with auto-linking to inventory (when mode is 'immediate')
+            elif entry_type == "revenue" and inventory_deduction_mode == "immediate":
+                item_name = (entry.get("item_name") or "").strip()
+                qty = entry.get("quantity")
+                if not item_name or qty is None:
+                    continue  # Can't auto-link without item name and quantity
+                qty = Decimal(qty)
+                unit = (entry.get("unit") or "unit").strip()
+                
+                # Check if this item exists in inventory
+                key = (item_name.lower(), unit.lower())
+                if key not in item_cache:
+                    existing = (
+                        await session.execute(
+                            select(InventoryItem.id).where(
+                                InventoryItem.org_id == org_id,
+                                InventoryItem.name.ilike(f"%{item_name}%"),
+                            )
+                        )
+                    ).scalar_one_or_none()
+                    if existing is None:
+                        # No matching inventory item - just record revenue, no COGS
+                        continue
                     item_cache[key] = existing
-            item_id = item_cache[key]
-            if entry_type == "inventory_purchase":
-                unit_cost = entry.get("unit_cost")
-                total = entry.get("total")
-                if unit_cost is None and total is not None and qty != 0:
-                    unit_cost = Decimal(total) / qty
-                unit_cost = _quantize_unit_cost(unit_cost)
-                entry["unit_cost"] = unit_cost
-                if persist:
-                    await self.inventory_repo.add_movement(
-                        session,
-                        org_id=org_id,
-                        item_id=item_id,
-                        qty_delta=float(qty),
-                        unit_cost=float(unit_cost) if unit_cost is not None else None,
-                        memo=memo_tag or "journal purchase",
-                        ref_document_id=None,
-                    )
-            elif entry_type == "inventory_use":
-                unit_cost = entry.get("unit_cost")
-                if unit_cost is None:
-                    wac = await self.inventory_repo.weighted_average_cost(session, org_id=org_id, item_id=item_id)
-                    unit_cost = wac
-                unit_cost = _quantize_unit_cost(unit_cost)
-                if unit_cost is None:
-                    entry["ambiguous"] = True
-                    entry["resolved"] = False
-                    entry["clarification_question"] = (
-                        entry.get("clarification_question")
-                        or "unable to determine inventory cost, please review stock levels"
-                    )
-                    continue
-                entry["unit_cost"] = unit_cost
-                entry["total"] = _quantize_money(unit_cost * qty)
-                if persist:
+                
+                item_id = item_cache[key]
+                
+                # Get weighted average cost for COGS calculation
+                wac = await self.inventory_repo.weighted_average_cost(session, org_id=org_id, item_id=item_id)
+                if wac is None:
+                    wac = Decimal("0")
+                
+                unit_cost = _quantize_unit_cost(wac)
+                cogs = _quantize_money(unit_cost * qty) if unit_cost else Decimal("0")
+                
+                # Store COGS info in entry notes for visibility
+                if cogs > 0:
+                    entry["notes"] = f"Auto-linked: COGS ${cogs} ({qty} × ${unit_cost})"
+                
+                if persist and qty > 0:
+                    # Deduct from inventory (negative movement)
                     await self.inventory_repo.add_movement(
                         session,
                         org_id=org_id,
                         item_id=item_id,
                         qty_delta=float(-qty),
-                        unit_cost=float(unit_cost),
-                        memo=memo_tag or "journal usage",
+                        unit_cost=float(unit_cost) if unit_cost else None,
+                        memo=memo_tag or "sale (auto-deducted)",
                         ref_document_id=None,
                     )
 
@@ -310,6 +365,7 @@ class JournalRepo:
             entries=entries,
             day_id=day.id,
             persist=True,
+            inventory_deduction_mode=getattr(settings, 'inventory_deduction_mode', 'immediate'),
         )
         stored_entries = await self.replace_entries(session, day=day, org_id=org_id, entries=entries)
 

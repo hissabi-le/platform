@@ -39,10 +39,17 @@ redis_client = _RedisClient()
 
 
 class AnalyticsCache:
+    """
+    Distributed analytics cache backed by Redis.
+    
+    Note: Unlike previous versions, this cache does NOT have a local fallback.
+    In distributed environments (Kubernetes), local caching creates "split-brain"
+    data where different pods see different data. When Redis is unavailable,
+    this cache returns None to force recomputation (slower but correct).
+    """
+    
     def __init__(self, ttl_seconds: int) -> None:
         self._ttl = ttl_seconds
-        self._local: dict[str, tuple[str, float]] = {}
-        self._local_lock = asyncio.Lock()
 
     def _key(self, org_id: int, range_key: str) -> str:
         return f"analytics:pnl:{org_id}:{range_key}"
@@ -51,29 +58,27 @@ class AnalyticsCache:
         key = self._key(org_id, range_key)
         client = await redis_client.get()
         if client:
-            payload = await client.get(key)
-            if payload:
-                return json.loads(payload)
-            return None
-        async with self._local_lock:
-            entry = self._local.get(key)
-            if not entry:
-                return None
-            payload, expires = entry
-            if expires < time.monotonic():
-                self._local.pop(key, None)
-                return None
-            return json.loads(payload)
+            try:
+                payload = await client.get(key)
+                if payload:
+                    return json.loads(payload)
+            except Exception as e:
+                logger.warning("Redis get failed for %s: %s", key, e)
+        else:
+            logger.warning("Redis unavailable, cache miss for %s", key)
+        return None
 
     async def set(self, org_id: int, range_key: str, payload: dict[str, Any]) -> None:
         key = self._key(org_id, range_key)
         raw = json.dumps(payload, default=str)
         client = await redis_client.get()
         if client:
-            await client.set(key, raw, ex=self._ttl)
-            return
-        async with self._local_lock:
-            self._local[key] = (raw, time.monotonic() + self._ttl)
+            try:
+                await client.set(key, raw, ex=self._ttl)
+            except Exception as e:
+                logger.warning("Redis set failed for %s: %s", key, e)
+        else:
+            logger.warning("Redis unavailable, cannot cache %s", key)
 
 
 class JobStore:

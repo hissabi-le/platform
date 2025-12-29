@@ -95,3 +95,14 @@ async def refresh(
 @router.get("/me", response_model=UserOut)
 async def me(auth: AuthContext = Depends(current_user)) -> UserOut:
     return UserOut.model_validate(auth.user, from_attributes=True)
+
+
+@router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
+async def logout(auth: AuthContext = Depends(current_user)) -> None:
+    """
+    Logout endpoint. Currently a no-op since we use stateless JWTs.
+    Future: Add token to a blocklist for immediate invalidation.
+    """
+    # In a production system with token blocklisting, you would:
+    # await token_blocklist.add(auth.payload.jti, ttl=auth.payload.exp - int(time.time()))
+    return None

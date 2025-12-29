@@ -142,6 +142,16 @@ class IngestionRun(Base):
     upload:       Mapped["Upload"]   = relationship("Upload", back_populates="ingestion_runs")
 
 
+class AccountType(str, Enum):
+    """Account classification for deterministic P&L reporting."""
+    ASSET = "ASSET"
+    LIABILITY = "LIABILITY"
+    EQUITY = "EQUITY"
+    REVENUE = "REVENUE"
+    COGS = "COGS"
+    EXPENSE = "EXPENSE"
+
+
 class Transaction(Base):
     __tablename__ = "transactions"
 
@@ -160,6 +170,12 @@ class Transaction(Base):
     amount:        Mapped[Decimal]    = mapped_column(Numeric(18, 4), nullable=False)
     currency:      Mapped[str]        = mapped_column(String(10), nullable=False)
     description:   Mapped[Optional[str]]  = mapped_column(Text, nullable=True)
+    account_type:  Mapped[str]        = mapped_column(
+                                           String(20),
+                                           nullable=False,
+                                           default=AccountType.EXPENSE.value,
+                                           comment="ASSET, LIABILITY, EQUITY, REVENUE, COGS, EXPENSE"
+                                       )
     metadata_json: Mapped[Any]        = mapped_column(
                                            JSON,
                                            default=dict,
@@ -269,6 +285,11 @@ class OrganisationSettings(Base):
     default_currency: Mapped[str] = mapped_column(String(10), nullable=False, default="USD")
     default_locale: Mapped[str] = mapped_column(String(10), nullable=False, default="en")
     vat_rate: Mapped[Optional[Decimal]] = mapped_column(Numeric(5, 2))
+    # Inventory settings
+    inventory_deduction_mode: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="immediate"
+    )  # immediate, on_shipment, manual
+    enable_recipes: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

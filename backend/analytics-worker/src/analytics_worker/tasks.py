@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from datetime import datetime
 from typing import Sequence
 
 from celery import Celery, group
+from celery.signals import task_failure
 
 from .config import settings
 from .db import session_scope
@@ -25,7 +27,41 @@ celery_app.conf.update(
     worker_prefetch_multiplier=settings.worker_prefetch_multiplier,
     worker_max_tasks_per_child=500,
     broker_connection_retry_on_startup=True,
+    
+    # Dead Letter Queue / Reliability configuration
+    task_acks_late=True,  # ACK after task completes, not when received
+    task_reject_on_worker_lost=True,  # Requeue if worker dies mid-task
+    task_default_queue="analytics",  # Default queue name
+    task_routes={
+        "analytics_worker.tasks.*": {"queue": "analytics"},
+    },
 )
+
+
+# Dead Letter Queue handler - store failed tasks for debugging
+@task_failure.connect
+def handle_task_failure(sender=None, task_id=None, exception=None, args=None, kwargs=None, traceback=None, einfo=None, **kw):
+    """Store failed tasks in Redis dead letter queue for later inspection."""
+    try:
+        from .cache import redis_client
+        
+        async def _store_dlq():
+            client = await redis_client.get()
+            if client:
+                await client.lpush("analytics:dead_letter", json.dumps({
+                    "task_id": task_id,
+                    "task_name": sender.name if sender else "unknown",
+                    "exception": str(exception),
+                    "args": list(args) if args else [],
+                    "kwargs": dict(kwargs) if kwargs else {},
+                    "failed_at": datetime.utcnow().isoformat(),
+                }, default=str))
+                # Keep only last 1000 failed tasks
+                await client.ltrim("analytics:dead_letter", 0, 999)
+        
+        asyncio.run(_store_dlq())
+    except Exception as e:
+        logger.error("Failed to store task in DLQ: %s", e)
 
 
 async def _refresh(org_id: int, ranges: Sequence[str] | None, reason: str | None):

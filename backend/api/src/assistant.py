@@ -57,6 +57,7 @@ PURCHASE_TOKENS = {
     "purchased",
     "acheté",
     "acheter",
+    "achet",  # tokenized version without accent
     "اشترى",
     "شراء",
     "stocked",
@@ -101,6 +102,21 @@ INGREDIENT_KEYWORDS = {
     "lait",
     "farine",
     "beurre",
+    # Common retail items that should be inventory
+    "snickers",
+    "chocolate",
+    "candy",
+    "chips",
+    "soda",
+    "water",
+    "juice",
+    "bottle",
+    "can",
+    "pack",
+    "product",
+    "item",
+    "stock",
+    "goods",
 }
 FIXED_EXPENSES = {
     "rent",
@@ -172,6 +188,7 @@ def _normalize_amount_fragment(fragment: str) -> str:
 
 
 def _extract_quantity(line: str) -> tuple[Optional[Decimal], Optional[str], Optional[tuple[int, int]]]:
+    # First try: explicit unit match (10 kg, 5 pieces, etc.)
     pattern = re.compile(
         r"(?P<qty>-?\d+(?:[\,\.]\d+)?)\s*(?P<unit>kg|kilograms?|kilo|g|grams?|l|liters?|litres?|piece|pieces|pcs|dozen|dz|unit|units)",
         re.IGNORECASE,
@@ -185,6 +202,36 @@ def _extract_quantity(line: str) -> tuple[Optional[Decimal], Optional[str], Opti
         unit_key = match.group("unit").lower()
         unit = UNIT_ALIASES.get(unit_key, unit_key)
         return qty, unit, match.span()
+    
+    # Fallback: multi-language "verb + NUMBER + word" pattern
+    # English: bought, sold, buy, sell, purchased, used, use
+    # French: acheté, vendu, acheter, vendre
+    # Arabic: اشترى, بعت, شراء, بيع
+    fallback_pattern = re.compile(
+        r"(?:bought|sold|buy|sell|purchased|used|use|acheté|acheter|vendu|vendre|اشترى|بعت|شراء|بيع)\s+(?P<qty>\d+(?:[\,\.]\d+)?)\s*(?P<item>\w+)?",
+        re.IGNORECASE,
+    )
+    for match in fallback_pattern.finditer(line):
+        qty_raw = _normalize_amount_fragment(match.group("qty"))
+        try:
+            qty = Decimal(qty_raw)
+        except Exception:
+            continue
+        # Default to "unit" when no standard unit found
+        return qty, "unit", match.span()
+    
+    # Last resort: look for number at start of line or after common patterns
+    # e.g., "5 café pour 25$" or "10 croissants à 2€"
+    simple_qty_pattern = re.compile(r"^(?P<qty>\d+)\s+(?P<item>\w+)", re.IGNORECASE)
+    match = simple_qty_pattern.match(line.strip())
+    if match:
+        qty_raw = _normalize_amount_fragment(match.group("qty"))
+        try:
+            qty = Decimal(qty_raw)
+            return qty, "unit", match.span()
+        except Exception:
+            pass
+    
     return None, None, None
 
 
@@ -259,7 +306,8 @@ def _infer_category(entry_type: str, item_name: Optional[str], tokens: list[str]
     if entry_type == "inventory_purchase":
         if any(tok in INGREDIENT_KEYWORDS for tok in relevant):
             return "Ingredients"
-        return None
+        # Default to Merchandise if not a known ingredient
+        return "Merchandise"
     if entry_type == "inventory_use":
         return "Ingredients"
     if any(tok in FIXED_EXPENSES for tok in relevant):
@@ -309,10 +357,15 @@ def _heuristic_parse(lines: list[str], language: str) -> dict[str, Any]:
         amount = _extract_amount(stripped, qty_span)
         vat_percent, vat_included = _detect_vat(stripped)
 
+        # Extract item name by filtering out verbs, prepositions, and noise words
+        NOISE_WORDS = {"for", "to", "at", "the", "a", "an", "de", "du", "le", "la", "les", "pour", "ب", "الـ", "من"}
         item_name = stripped
         if tokens:
-            # keep phrases excluding verbs for readability
-            item_tokens = [tok for tok in tokens if tok not in REVENUE_TOKENS | COST_TOKENS | PURCHASE_TOKENS | USE_TOKENS | TRANSFER_TOKENS]
+            # keep phrases excluding verbs and noise words for readability
+            all_exclude = REVENUE_TOKENS | COST_TOKENS | PURCHASE_TOKENS | USE_TOKENS | TRANSFER_TOKENS | NOISE_WORDS
+            item_tokens = [tok for tok in tokens if tok not in all_exclude]
+            # Also remove pure numbers
+            item_tokens = [tok for tok in item_tokens if not tok.isdigit()]
             if item_tokens:
                 item_name = " ".join(item_tokens)
 
@@ -332,6 +385,7 @@ def _heuristic_parse(lines: list[str], language: str) -> dict[str, Any]:
             "resolved": True,
         }
 
+        # Only flag as ambiguous if we're really missing critical info
         if entry_type in {"inventory_purchase", "inventory_use"} and qty is None:
             entry["ambiguous"] = True
             entry["clarification_question"] = "please provide quantity for inventory movement"
@@ -340,10 +394,7 @@ def _heuristic_parse(lines: list[str], language: str) -> dict[str, Any]:
             entry["ambiguous"] = True
             entry["clarification_question"] = "please confirm the total amount for this line"
             entry["resolved"] = False
-        if entry_type == "inventory_purchase" and entry["category"] is None:
-            entry["ambiguous"] = True
-            entry["clarification_question"] = "should this purchase be tracked as inventory or expensed today?"
-            entry["resolved"] = False
+        # For inventory purchases WITH quantity and amount, auto-resolve (don't ask clarification)
 
         entries.append(_normalize_entry_payload(entry))
 
@@ -431,6 +482,10 @@ class OpenAIClient:
         schema = {
             "type": "object",
             "properties": {
+                "reasoning": {
+                    "type": "string",
+                    "description": "Explain which rows represent real inventory items and why others were excluded. Note any ambiguity in item names or quantities."
+                },
                 "items": {
                     "type": "array",
                     "items": {
@@ -447,7 +502,7 @@ class OpenAIClient:
                     },
                 }
             },
-            "required": ["items"],
+            "required": ["reasoning", "items"],
             "additionalProperties": False,
         }
         out = self._responses_json(system, user, schema)
@@ -483,6 +538,10 @@ class OpenAIClient:
         schema = {
             "type": "object",
             "properties": {
+                "reasoning": {
+                    "type": "string",
+                    "description": "Explain the classification logic for each account based on standard accounting principles. Note any ambiguous cases."
+                },
                 "items": {
                     "type": "array",
                     "items": {
@@ -496,7 +555,7 @@ class OpenAIClient:
                     },
                 }
             },
-            "required": ["items"],
+            "required": ["reasoning", "items"],
             "additionalProperties": False,
         }
         out = self._responses_json(system, user, schema)
@@ -537,6 +596,10 @@ class OpenAIClient:
         journal_schema = {
             "type": "object",
             "properties": {
+                "reasoning": {
+                    "type": "string",
+                    "description": "Analyze the input lines. Explain why certain items are classified as Revenue vs Cost. Note any ambiguity or missing information."
+                },
                 "language": {"type": "string"},
                 "entries": {
                     "type": "array",
@@ -562,7 +625,7 @@ class OpenAIClient:
                     },
                 },
             },
-            "required": ["entries"],
+            "required": ["reasoning", "entries"],
             "additionalProperties": False,
         }
 

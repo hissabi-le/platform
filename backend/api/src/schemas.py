@@ -319,6 +319,9 @@ class OrganisationSettingsBase(BaseModel):
     default_currency: Annotated[str, Field(min_length=1, max_length=10)] = "USD"
     default_locale: Annotated[str, Field(min_length=2, max_length=10)] = "en"
     vat_rate: Optional[Annotated[Decimal, Field(max_digits=5, decimal_places=2)]] = None
+    # Inventory settings
+    inventory_deduction_mode: Literal["immediate", "on_shipment", "manual"] = "immediate"
+    enable_recipes: bool = False
 
     @field_validator(
         "total_initial_investment",
@@ -351,6 +354,9 @@ class OrganisationSettingsUpdate(BaseModel):
     default_currency: Optional[Annotated[str, Field(min_length=1, max_length=10)]] = None
     default_locale: Optional[Annotated[str, Field(min_length=2, max_length=10)]] = None
     vat_rate: Optional[Annotated[Decimal, Field(max_digits=5, decimal_places=2)]] = None
+    # Inventory settings
+    inventory_deduction_mode: Optional[Literal["immediate", "on_shipment", "manual"]] = None
+    enable_recipes: Optional[bool] = None
 
     @field_validator(
         "total_initial_investment",

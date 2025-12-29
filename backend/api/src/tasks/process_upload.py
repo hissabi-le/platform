@@ -16,8 +16,11 @@ from ..database import async_session
 from ..excel_cleaner import clean_table, load_table
 from ..models import Document, InventoryItem, InventoryMovement, Transaction, Upload
 from ..storage import load_file
+from ..assistant import OpenAIClient
+from ..config import settings
 
 logger = logging.getLogger(__name__)
+
 
 
 @dramatiq.actor(max_retries=0)
@@ -61,7 +64,34 @@ async def _process_upload(upload_id: int, org_id: int, storage_path: str) -> Non
                 tmp_path = tmp.name
             try:
                 df = load_table(tmp_path)
-                df = clean_table(df)
+                
+                # Attempt LLM-based processing if API key is available
+                llm_client = OpenAIClient() if settings.openai_api_key else None
+                rows = None
+                
+                if llm_client:
+                    try:
+                        if _is_journal_like(df):
+                            # Journal/log documents - use LLM journal parsing
+                            logger.info("Upload %s detected as journal-like, using LLM parsing", upload_id)
+                            lines = _dataframe_to_lines(df)
+                            result = llm_client.parse_journal_lines(lines)
+                            rows = result.get("entries", [])
+                        elif _is_structured_inventory(df):
+                            # Structured inventory/invoice - use LLM mapping
+                            logger.info("Upload %s detected as structured inventory, using LLM mapping", upload_id)
+                            raw_rows = df.to_dict(orient="records")
+                            rows = llm_client.map_rows_to_inventory(raw_rows)
+                    except Exception as llm_exc:
+                        logger.warning("LLM processing failed for upload %s, falling back to heuristics: %s", upload_id, llm_exc)
+                        rows = None
+                
+                # Fallback to heuristic cleaning if LLM didn't produce rows
+                if rows is None:
+                    logger.info("Upload %s using heuristic clean_table processing", upload_id)
+                    df = clean_table(df)
+                    rows = df.to_dict(orient="records")
+                    
             finally:
                 os.unlink(tmp_path)
         except Exception as exc:  # pragma: no cover - defensive
@@ -69,7 +99,6 @@ async def _process_upload(upload_id: int, org_id: int, storage_path: str) -> Non
             logger.exception("Failed to parse upload %s", upload_id)
             return
 
-        rows = df.to_dict(orient="records")
 
         txn_count = 0
         movement_count = 0
@@ -210,6 +239,9 @@ async def _persist_transaction_row(
     currency = _norm_str(row.get("Currency")) or "LBP"
     raw_date = row.get("Date")
     txn_date = _parse_date(raw_date)
+    
+    # Classify account type at insertion time for deterministic analytics
+    account_type = _classify_account_type(account, category, amount)
 
     txn = Transaction(
         org_id=org_id,
@@ -220,6 +252,7 @@ async def _persist_transaction_row(
         amount=float(amount),
         currency=currency,
         description=description,
+        account_type=account_type,
         metadata_json=_normalize_metadata(row),
     )
     session.add(txn)
@@ -238,3 +271,125 @@ def _parse_date(value: Any) -> datetime:
         return datetime.fromisoformat(str(ts))
     except Exception:
         return datetime.utcnow()
+
+
+# ------------------- Document Type Detection -------------------
+
+def _is_journal_like(df: pd.DataFrame) -> bool:
+    """
+    Detect if a DataFrame represents unstructured journal/log entries.
+    Journal documents typically have:
+    - Few columns (1-3)
+    - Text-heavy content
+    - No clear numeric amount columns
+    """
+    if len(df.columns) > 4:
+        return False
+    
+    # Check if it looks like free-text entries
+    text_cols = [c for c in df.columns if df[c].dtype == object]
+    numeric_cols = [c for c in df.columns if pd.api.types.is_numeric_dtype(df[c])]
+    
+    # Journal-like if mostly text with minimal structure
+    if len(text_cols) >= 1 and len(numeric_cols) <= 1:
+        # Check if text rows are sentence-like (contain multiple words)
+        sample = df[text_cols[0]].dropna().head(10)
+        avg_words = sample.apply(lambda x: len(str(x).split())).mean() if len(sample) > 0 else 0
+        return avg_words > 3  # Average more than 3 words per cell suggests journal entries
+    
+    return False
+
+
+def _is_structured_inventory(df: pd.DataFrame) -> bool:
+    """
+    Detect if a DataFrame represents structured inventory/invoice data.
+    Inventory documents typically have:
+    - Item/Product/Description column
+    - Quantity column
+    - Amount/Price/Cost column
+    """
+    lower_cols = {c.lower(): c for c in df.columns}
+    
+    # Check for typical inventory column patterns
+    item_cols = {"item", "product", "description", "name", "sku", "article"}
+    qty_cols = {"qty", "quantity", "qté", "units", "count"}
+    amount_cols = {"amount", "total", "price", "cost", "value", "unit_cost"}
+    
+    has_item = any(col in lower_cols for col in item_cols)
+    has_qty = any(col in lower_cols for col in qty_cols)
+    has_amount = any(col in lower_cols for col in amount_cols)
+    
+    # Structured inventory if it has item + (qty or amount)
+    return has_item and (has_qty or has_amount)
+
+
+def _dataframe_to_lines(df: pd.DataFrame) -> list[str]:
+    """
+    Convert a DataFrame to a list of text lines for LLM journal parsing.
+    Concatenates all text columns into readable lines.
+    """
+    lines = []
+    text_cols = [c for c in df.columns if df[c].dtype == object]
+    
+    for _, row in df.iterrows():
+        parts = []
+        for col in text_cols:
+            val = row.get(col)
+            if pd.notna(val) and str(val).strip():
+                parts.append(str(val).strip())
+        if parts:
+            lines.append(" | ".join(parts))
+    
+    return lines
+
+
+# ------------------- Account Type Classification -------------------
+
+# Keyword sets for deterministic classification
+_REVENUE_KEYWORDS = {"revenue", "sales", "income", "turnover", "receipt", "sell", "sold"}
+_COGS_KEYWORDS = {"cogs", "cost of goods", "cost-of-goods", "inventory cost", "materials"}
+_EXPENSE_KEYWORDS = {
+    "expense", "operating", "rent", "salary", "salaries", "wage", "utilities",
+    "marketing", "advertising", "admin", "general", "depreciation", "tax",
+    "electricity", "water", "internet", "fuel", "maintenance", "fees"
+}
+_ASSET_KEYWORDS = {"cash", "bank", "receivable", "inventory", "asset", "prepaid", "equipment"}
+_LIABILITY_KEYWORDS = {"payable", "loan", "debt", "accrued", "credit", "mortgage"}
+_EQUITY_KEYWORDS = {"equity", "capital", "retained", "earnings", "dividend", "owner"}
+
+
+def _classify_account_type(account: str, category: str, amount: float | None = None) -> str:
+    """
+    Classify a transaction into one of: ASSET, LIABILITY, EQUITY, REVENUE, COGS, EXPENSE.
+    Uses deterministic keyword matching for financial data integrity.
+    """
+    from ..models import AccountType
+    
+    # Combine account and category for matching
+    combined = f"{account} {category}".lower()
+    
+    def _match(keywords: set[str]) -> bool:
+        return any(kw in combined for kw in keywords)
+    
+    # Check in order of specificity
+    if _match(_REVENUE_KEYWORDS):
+        return AccountType.REVENUE.value
+    if _match(_COGS_KEYWORDS):
+        return AccountType.COGS.value
+    if _match(_ASSET_KEYWORDS):
+        return AccountType.ASSET.value
+    if _match(_LIABILITY_KEYWORDS):
+        return AccountType.LIABILITY.value
+    if _match(_EQUITY_KEYWORDS):
+        return AccountType.EQUITY.value
+    if _match(_EXPENSE_KEYWORDS):
+        return AccountType.EXPENSE.value
+    
+    # Default based on amount sign if no keywords match
+    if amount is not None:
+        if amount > 0:
+            return AccountType.REVENUE.value
+        else:
+            return AccountType.EXPENSE.value
+    
+    return AccountType.EXPENSE.value

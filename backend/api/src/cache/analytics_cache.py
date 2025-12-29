@@ -2,12 +2,16 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import time
 from typing import Optional
 
 from redis import asyncio as redis
+from redis.exceptions import ConnectionError as RedisConnectionError
 
 from ..config import settings
+
+logger = logging.getLogger(__name__)
 
 
 class AnalyticsCache:
@@ -17,9 +21,10 @@ class AnalyticsCache:
         self._redis_lock = asyncio.Lock()
         self._local: dict[str, tuple[str, float]] = {}
         self._local_lock = asyncio.Lock()
+        self._redis_available = True
 
     async def _client(self) -> Optional[redis.Redis]:
-        if not settings.redis_url:
+        if not settings.redis_url or not self._redis_available:
             return None
         async with self._redis_lock:
             if self._redis is None:
@@ -33,8 +38,12 @@ class AnalyticsCache:
         key = self._key(org_id, range_key)
         client = await self._client()
         if client:
-            data = await client.get(key)
-            return json.loads(data) if data else None
+            try:
+                data = await client.get(key)
+                return json.loads(data) if data else None
+            except (RedisConnectionError, ConnectionRefusedError, OSError) as e:
+                logger.warning(f"Redis unavailable, using local cache: {e}")
+                self._redis_available = False
         async with self._local_lock:
             entry = self._local.get(key)
             if not entry:
@@ -50,15 +59,22 @@ class AnalyticsCache:
         raw = json.dumps(payload)
         client = await self._client()
         if client:
-            await client.set(key, raw, ex=self._ttl)
-        else:
-            async with self._local_lock:
-                self._local[key] = (raw, time.monotonic() + self._ttl)
+            try:
+                await client.set(key, raw, ex=self._ttl)
+                return
+            except (RedisConnectionError, ConnectionRefusedError, OSError) as e:
+                logger.warning(f"Redis unavailable, using local cache: {e}")
+                self._redis_available = False
+        async with self._local_lock:
+            self._local[key] = (raw, time.monotonic() + self._ttl)
 
     async def clear(self) -> None:
         client = await self._client()
         if client:
-            await client.flushdb()
+            try:
+                await client.flushdb()
+            except (RedisConnectionError, ConnectionRefusedError, OSError):
+                pass  # Best effort
         async with self._local_lock:
             self._local.clear()
 

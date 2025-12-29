@@ -13,39 +13,13 @@ from ..repositories.transactions import TransactionRow, window_iter
 logger = logging.getLogger(__name__)
 
 
-PNL_REVENUE_KEYS = {"revenue", "sales", "income", "turnover", "receipt"}
-PNL_COGS_KEYS = {"cogs", "cost of goods", "cost-of-goods", "inventory cost"}
-PNL_EXPENSE_KEYS = {
-    "expense",
-    "operating",
-    "rent",
-    "salary",
-    "salaries",
-    "wage",
-    "utilities",
-    "marketing",
-    "advertising",
-    "admin",
-    "general",
-    "depreciation",
-    "tax",
-}
-
-
-def _classify_pnl_bucket(name: str, default: str, category: str | None = None) -> str:
-    lower = name.lower()
-    cat_lower = (category or "").lower()
-
-    def _match(keys: set[str]) -> bool:
-        return any(key in lower for key in keys) or any(key in cat_lower for key in keys)
-
-    if _match(PNL_REVENUE_KEYS):
-        return "revenue"
-    if _match(PNL_COGS_KEYS):
-        return "cogs"
-    if _match(PNL_EXPENSE_KEYS):
-        return "expense"
-    return default
+# Account type constants (must match models.AccountType in API)
+ACCOUNT_TYPE_REVENUE = "REVENUE"
+ACCOUNT_TYPE_COGS = "COGS"
+ACCOUNT_TYPE_EXPENSE = "EXPENSE"
+ACCOUNT_TYPE_ASSET = "ASSET"
+ACCOUNT_TYPE_LIABILITY = "LIABILITY"
+ACCOUNT_TYPE_EQUITY = "EQUITY"
 
 
 @dataclass
@@ -66,6 +40,10 @@ class PnLAggregator:
         self.latest_txn: datetime | None = None
 
     def consume(self, row: TransactionRow) -> None:
+        """
+        Process a transaction row using deterministic account_type classification.
+        This replaces the previous string-matching approach for financial integrity.
+        """
         self.rows_processed += 1
         self.first_txn = row.txn_date if self.first_txn is None else min(self.first_txn, row.txn_date)
         self.latest_txn = row.txn_date if self.latest_txn is None else max(self.latest_txn, row.txn_date)
@@ -73,24 +51,29 @@ class PnLAggregator:
         amount = row.amount
         if amount == 0:
             return
-        default_bucket = "revenue" if amount >= 0 else "expense"
-        bucket = _classify_pnl_bucket(row.account_code or row.category, default_bucket, row.category)
-        if bucket == "revenue":
+        
+        # Use deterministic account_type from database instead of string matching
+        account_type = row.account_type
+        
+        if account_type == ACCOUNT_TYPE_REVENUE:
             self.revenue_total += amount
-        elif bucket == "cogs":
+        elif account_type == ACCOUNT_TYPE_COGS:
             self.cogs_total += abs(amount)
-        else:
+        elif account_type == ACCOUNT_TYPE_EXPENSE:
             key = row.category or row.account_code
             self.expenses[key] += abs(amount)
+        # ASSET, LIABILITY, EQUITY transactions don't directly affect P&L
+        # but we still track them in the series for cash flow visibility
 
         month_key = (row.txn_date.year, row.txn_date.month)
         entry = self._series.get(month_key)
         if not entry:
             entry = SeriesPoint(date=datetime(row.txn_date.year, row.txn_date.month, 1).date().isoformat())
             self._series[month_key] = entry
-        if amount >= 0:
+        
+        if account_type == ACCOUNT_TYPE_REVENUE:
             entry.revenue += amount
-        else:
+        elif account_type in (ACCOUNT_TYPE_COGS, ACCOUNT_TYPE_EXPENSE):
             entry.expenses += abs(amount)
 
     def snapshot(self) -> dict:
@@ -215,39 +198,56 @@ async def run_job(
 ) -> dict[str, dict]:
     """
     Execute an analytics recomputation job with distributed locking + job store tracking.
+    Instrumented with Prometheus metrics for observability.
     """
+    from ..metrics import track_job_duration, record_rows_processed
+    
     service = AnalyticsService()
     lock = DistributedLock(f"org-{org_id}", ttl_seconds=settings.analytics_cache_ttl_seconds)
     job_id = f"analytics-{org_id}-{int(datetime.utcnow().timestamp())}"
+    range_keys = list(ranges) if ranges else list(settings.analytics_range_windows.keys())
+    
     await job_store.start(
         job_id,
         {
             "org_id": org_id,
-            "ranges": list(ranges) if ranges else list(settings.analytics_range_windows.keys()),
+            "ranges": range_keys,
             "reason": reason,
             "started_at": datetime.utcnow().isoformat(),
         },
     )
+    
     async with lock.acquire() as acquired:
         if not acquired:
             logger.info("Skip analytics job %s – lock busy", job_id)
             await job_store.fail(job_id, {"org_id": org_id, "error": "lock-busy"})
             return {}
-        try:
-            payload = await service.recompute_org(session, org_id, ranges=ranges)
-            await job_store.complete(
-                job_id,
-                {"org_id": org_id, "finished_at": datetime.utcnow().isoformat(), "summary": payload},
-            )
-            return payload
-        except Exception as exc:
-            logger.exception("Analytics recompute failed for org %s", org_id)
-            await job_store.fail(
-                job_id,
-                {
-                    "org_id": org_id,
-                    "finished_at": datetime.utcnow().isoformat(),
-                    "error": str(exc),
-                },
-            )
-            raise
+        
+        # Track job duration and success/failure with Prometheus metrics
+        with track_job_duration(org_id, range_keys[0] if range_keys else "all"):
+            try:
+                payload = await service.recompute_org(session, org_id, ranges=ranges)
+                
+                # Record rows processed for throughput monitoring
+                for range_key, data in payload.items():
+                    rows = data.get("metadata", {}).get("rows_processed", 0)
+                    if rows:
+                        record_rows_processed(org_id, rows)
+                
+                await job_store.complete(
+                    job_id,
+                    {"org_id": org_id, "finished_at": datetime.utcnow().isoformat(), "summary": payload},
+                )
+                return payload
+            except Exception as exc:
+                logger.exception("Analytics recompute failed for org %s", org_id)
+                await job_store.fail(
+                    job_id,
+                    {
+                        "org_id": org_id,
+                        "finished_at": datetime.utcnow().isoformat(),
+                        "error": str(exc),
+                    },
+                )
+                raise
+

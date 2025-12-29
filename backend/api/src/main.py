@@ -48,6 +48,27 @@ from .tasks import enqueue_upload_processing
 
 ensure_async_client_app_support()
 
+# Initialize Sentry for error tracking in production
+try:
+    import sentry_sdk
+    from sentry_sdk.integrations.fastapi import FastApiIntegration
+    from sentry_sdk.integrations.sqlalchemy import SqlalchemyIntegration
+    
+    if settings.environment == "production" and settings.sentry_dsn:
+        sentry_sdk.init(
+            dsn=settings.sentry_dsn,
+            environment=settings.environment,
+            integrations=[
+                FastApiIntegration(transaction_style="url"),
+                SqlalchemyIntegration(),
+            ],
+            traces_sample_rate=0.1,  # Sample 10% of transactions for performance monitoring
+            profiles_sample_rate=0.1,
+        )
+        logging.getLogger(__name__).info("Sentry initialized for error tracking")
+except ImportError:
+    pass  # sentry-sdk not installed, skip
+
 logging.basicConfig(
     filename="hissabi.log",
     level=logging.INFO,
@@ -59,11 +80,7 @@ app = FastAPI(title=settings.app_name, version="0.2.0")
 from fastapi.middleware.cors import CORSMiddleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",  # Next.js dev
-        "https://app.hissabi.com",  # Production frontend
-        settings.frontend_url if hasattr(settings, 'frontend_url') else "*",
-    ],
+    allow_origins=settings.cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -73,6 +90,45 @@ app.include_router(inventory_router.router)
 app.include_router(analytics_router.router)
 app.include_router(settings_router.router)
 app.include_router(journal_router.router)
+
+
+# --------------------- Health Check Endpoints ---------------------
+
+@app.get("/health", tags=["health"])
+async def health_check():
+    """Basic health check for load balancer liveness probes."""
+    return {"status": "healthy"}
+
+
+@app.get("/ready", tags=["health"])
+async def readiness_check():
+    """
+    Detailed readiness check for Kubernetes readiness probes.
+    Checks database connectivity and returns service status.
+    """
+    from .database import healthcheck as db_healthcheck
+    
+    db_ok = await db_healthcheck()
+    redis_ok = True
+    
+    try:
+        import redis
+        client = redis.from_url(settings.redis_url)
+        client.ping()
+    except Exception:
+        redis_ok = False
+    
+    all_ok = db_ok and redis_ok
+    status = "ready" if all_ok else "degraded"
+    
+    return {
+        "status": status,
+        "checks": {
+            "database": "ok" if db_ok else "error",
+            "redis": "ok" if redis_ok else "error",
+        }
+    }
+
 
 JWT_SECRET = settings.jwt_secret
 JWT_EXPIRE_MINUTES = settings.jwt_access_minutes
@@ -129,26 +185,17 @@ async def on_startup():
         await conn.run_sync(Base.metadata.create_all)
 
 
-# --------------------- Uploads ---------------------
-@app.post("/documents/upload", response_model=dict)
-async def documents_upload(
+# Backward-compatible alias with POST /uploads
+@app.post("/upload/document", response_model=dict, deprecated=True)
+async def upload_document_compat(
+    request: Request,
     file: UploadFile = File(...),
     _: None = Depends(enforce_upload_rate_limit),
     auth: AuthContext = Depends(require_plan("documents")),
     db: AsyncSession = Depends(get_db),
 ):
-    doc = await _persist_uploaded_document(file, auth, db, upload_id=upload.id)
-    await db.commit()
-    return {"document_id": doc.id}
-
-# Backward-compatible alias with earlier route style
-@app.post("/upload/document", response_model=dict)
-async def upload_document_compat(
-    file: UploadFile = File(...),
-    auth: AuthContext = Depends(require_plan("documents")),
-    db: AsyncSession = Depends(get_db),
-):
-    return await documents_upload(file=file, auth=auth, db=db)
+    """Deprecated: Use POST /uploads instead."""
+    return await create_upload(request=request, file=file, auth=auth, db=db)
 
 @app.get("/documents", response_model=list[DocumentRead])
 async def list_documents(
@@ -346,14 +393,11 @@ async def stripe_webhook(request: Request, db: AsyncSession = Depends(get_db)):
     return {"status": "ok"}
 
 
-# --------------------- Health ---------------------
-@app.get("/health", response_model=dict)
-async def health():
+@app.get("/healthz", response_model=dict, tags=["health"])
+async def health_compat():
+    """Kubernetes-style health check alias."""
     return {"status": "ok"}
 
-@app.get("/healthz", response_model=dict)
-async def health_compat():
-    return await health()
 
 @app.get("/version", response_model=dict)
 async def version():

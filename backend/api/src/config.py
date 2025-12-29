@@ -30,6 +30,8 @@ class Settings(BaseSettings):
     stripe_secret_key: str | None = Field(default=None, alias="STRIPE_SECRET_KEY")
     stripe_webhook_secret: str | None = Field(default=None, alias="STRIPE_WEBHOOK_SECRET")
 
+    sentry_dsn: str | None = Field(default=None, alias="SENTRY_DSN")
+
     storage_backend: Literal["local", "s3"] = Field(default="local", alias="STORAGE_BACKEND")
     storage_local_root: str = Field(default="./data/uploads", alias="STORAGE_LOCAL_ROOT")
     s3_endpoint_url: str | None = Field(default=None, alias="S3_ENDPOINT_URL")
@@ -57,6 +59,10 @@ class Settings(BaseSettings):
 
     rate_limit_login_per_min: int = Field(default=5, alias="RATE_LIMIT_LOGIN_PER_MIN")
     rate_limit_uploads_per_min: int = Field(default=3, alias="RATE_LIMIT_UPLOADS_PER_MIN")
+
+    # Feature flags (set to True to enable)
+    feature_inventory_enabled: bool = Field(default=False, alias="FEATURE_INVENTORY_ENABLED")
+    feature_recipes_enabled: bool = Field(default=False, alias="FEATURE_RECIPES_ENABLED")
 
     request_timeout_seconds: int = Field(default=30, alias="REQUEST_TIMEOUT_SECONDS")
 
@@ -90,6 +96,38 @@ class Settings(BaseSettings):
         if lowered in {"1", "true", "yes", "on"}:
             return True
         return False
+
+    @field_validator("jwt_secret")
+    @classmethod
+    def _validate_jwt_secret(cls, v: str) -> str:
+        """Prevent deployment with insecure default JWT secret."""
+        import os
+        env = os.getenv("ENVIRONMENT", "development")
+        is_production = env in ("production", "staging")
+        
+        if v == "change-me" and is_production:
+            raise ValueError(
+                "JWT_SECRET must be set to a secure value in production. "
+                "Generate one with: openssl rand -hex 32"
+            )
+        
+        # Only enforce minimum length in production
+        if is_production and len(v) < 32:
+            raise ValueError("JWT_SECRET must be at least 32 characters long in production")
+        
+        return v
+
+    @field_validator("stripe_webhook_secret")
+    @classmethod
+    def _validate_stripe_secret(cls, v: str | None) -> str | None:
+        """Warn if Stripe webhook secret is not configured."""
+        import os
+        import logging
+        if not v and os.getenv("ENVIRONMENT", "development") == "production":
+            logging.getLogger(__name__).warning(
+                "STRIPE_WEBHOOK_SECRET not configured - webhook verification will fail"
+            )
+        return v
 
 
 @lru_cache()

@@ -43,6 +43,9 @@ class Settings(BaseSettings):
     worker_concurrency: int = Field(default=2, alias="WORKER_CONCURRENCY")
     worker_prefetch_multiplier: int = Field(default=1, alias="WORKER_PREFETCH_MULTIPLIER")
 
+    environment: str = Field(default="development", alias="ENVIRONMENT")
+    sentry_dsn: str | None = Field(default=None, alias="SENTRY_DSN")
+
     healthcheck_interval_seconds: int = Field(default=60, alias="HEALTHCHECK_INTERVAL_SECONDS")
 
     @property

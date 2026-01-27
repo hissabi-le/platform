@@ -85,3 +85,98 @@ async def test_process_upload_creates_transactions_and_inventory():
             await session.execute(select(Transaction).where(Transaction.org_id == org.id))
         ).scalars().all()
         assert len(txn_rows_after) == 1
+
+
+class TestAIIngestion:
+    """Tests for AI-first document ingestion."""
+    
+    def test_ai_ingest_skips_without_api_key(self, monkeypatch):
+        """Without OPENAI_API_KEY, AI ingestion should return None (fallback)."""
+        monkeypatch.setattr(settings, "openai_api_key", None)
+        
+        from src.tasks.process_upload import _ai_ingest_document
+        import pandas as pd
+        
+        df = pd.DataFrame([{"Description": "Office supplies", "Amount": -50}])
+        result = asyncio.run(_ai_ingest_document(df))
+        
+        # Should return None when no API key (triggers fallback)
+        assert result is None
+    
+    def test_parse_ai_response_valid_format(self):
+        """_parse_ai_response should correctly parse chain-of-thought output."""
+        from src.tasks.process_upload import _parse_ai_response
+        
+        content = """ANALYSIS:
+Looking at this data, I see a mix of revenue and expense transactions.
+Row 1 is clearly a sale based on the positive amount and description.
+Row 2 appears to be an office supply purchase.
+
+---TRANSACTIONS---
+2024-01-15|Widget sale|150.00|Revenue - Sales|USD|paid|no|||
+2024-01-15|Office supplies|47.50|Operating Expenses - Supplies|USD|paid|no|||
+2024-01-15|Chicken purchase|200.00|Inventory Purchase|LBP|paid|yes|Chicken|10|kg
+"""
+        result = _parse_ai_response(content)
+        
+        assert result is not None
+        assert len(result) == 3
+        
+        # Check first transaction (revenue)
+        assert result[0]["description"] == "Widget sale"
+        assert result[0]["amount"] == 150.00  # Revenue stays positive
+        assert result[0]["category"] == "Revenue - Sales"
+        assert result[0]["payment_status"] == "paid"
+        assert result[0]["is_inventory"] is False
+        
+        # Check third transaction (inventory)
+        assert result[2]["is_inventory"] is True
+        assert result[2]["item_name"] == "Chicken"
+        assert result[2]["quantity"] == 10
+        assert result[2]["unit"] == "kg"
+    
+    def test_parse_ai_response_missing_delimiter(self):
+        """Should return None if TRANSACTIONS delimiter is missing."""
+        from src.tasks.process_upload import _parse_ai_response
+        
+        content = "Just some text without the expected format"
+        result = _parse_ai_response(content)
+        
+        assert result is None
+    
+    def test_parse_ai_response_empty_transactions(self):
+        """Should return empty list for valid format with no transactions."""
+        from src.tasks.process_upload import _parse_ai_response
+        
+        content = """ANALYSIS:
+This document appears to be empty or contain no financial data.
+
+---TRANSACTIONS---
+"""
+        result = _parse_ai_response(content)
+        
+        assert result == []
+    
+    def test_persist_transaction_fallback_uses_category(self):
+        """Fallback path should use spreadsheet category when present."""
+        from src.tasks.process_upload import _persist_transaction_row
+        from unittest.mock import MagicMock
+        
+        mock_session = MagicMock()
+        mock_session.add = MagicMock()
+        
+        row = {"Amount": 100, "Account": "Sales", "Description": "Widget sale", "Category": "Custom Cat"}
+        
+        async def run_test():
+            return await _persist_transaction_row(
+                mock_session, row, org_id=1, upload_id=1
+            )
+        
+        result = asyncio.run(run_test())
+        
+        assert result is True
+        added_txn = mock_session.add.call_args[0][0]
+        # Should use spreadsheet category
+        assert added_txn.category == "Custom Cat"
+
+

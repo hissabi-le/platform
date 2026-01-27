@@ -410,3 +410,42 @@ async def resolve_journal_day(
         clarifications=clarifications,
         totals=totals,
     )
+
+
+@router.patch("/entry/{entry_id}/payment-status")
+async def toggle_payment_status(
+    entry_id: int,
+    status: str,  # "paid" | "unpaid"
+    auth: AuthContext = Depends(require_plan("analytics_basic")),
+    session: AsyncSession = Depends(get_db),
+):
+    """Toggle payment status for a journal entry. Used for AR/AP tracking."""
+    from sqlalchemy import select, update
+    from ..models import JournalEntry
+    
+    if status not in ("paid", "unpaid"):
+        raise HTTPException(status_code=400, detail="status must be 'paid' or 'unpaid'")
+    
+    # Verify entry exists and belongs to user's org
+    query = select(JournalEntry).where(
+        JournalEntry.id == entry_id,
+        JournalEntry.org_id == auth.user.org_id,
+    )
+    result = await session.execute(query)
+    entry = result.scalar_one_or_none()
+    
+    if not entry:
+        raise HTTPException(status_code=404, detail="Journal entry not found")
+    
+    # Update payment status
+    payment_date = datetime.utcnow() if status == "paid" else None
+    entry.payment_status = status
+    entry.payment_date = payment_date
+    
+    await session.commit()
+    
+    return {
+        "id": entry.id,
+        "payment_status": status,
+        "payment_date": payment_date.isoformat() if payment_date else None,
+    }

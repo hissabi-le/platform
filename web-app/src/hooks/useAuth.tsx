@@ -3,6 +3,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api";
+import { AUTH_TOKEN_KEY, EVENTS } from "@/lib/constants";
 
 type User = { id: number; email: string; org_id: number };
 
@@ -20,10 +21,24 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
+
+  const logout = useCallback(() => {
+    // Prevent re-entrant logout calls (e.g., from 401 handler)
+    if (isLoggingOut) return;
+    setIsLoggingOut(true);
+
+    // Clear local state immediately - don't call API to avoid 401 loops
+    localStorage.removeItem(AUTH_TOKEN_KEY);
+    setUser(null);
+
+    // Reset flag after a short delay
+    setTimeout(() => setIsLoggingOut(false), 100);
+  }, [isLoggingOut]);
 
   // bootstrap from token on first load
   useEffect(() => {
-    const token = typeof window !== "undefined" ? localStorage.getItem("hissabi_token") : null;
+    const token = typeof window !== "undefined" ? localStorage.getItem(AUTH_TOKEN_KEY) : null;
     if (!token) {
       setLoading(false);
       return;
@@ -32,24 +47,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       .me()
       .then((u) => setUser(u))
       .catch(() => {
-        localStorage.removeItem("hissabi_token");
+        localStorage.removeItem(AUTH_TOKEN_KEY);
         setUser(null);
       })
       .finally(() => setLoading(false));
   }, []);
 
-  const login = useCallback((token: string, u: User) => {
-    localStorage.setItem("hissabi_token", token);
-    setUser(u);
-  }, []);
+  // Listen for global 401 events
+  useEffect(() => {
+    const handleUnauthorized = () => {
+      logout();
+    };
 
-  const logout = useCallback(() => {
-    try {
-      // fire-and-forget; backend may or may not invalidate server-side
-      void api.auth.logout();
-    } catch {}
-    localStorage.removeItem("hissabi_token");
-    setUser(null);
+    if (typeof window !== "undefined") {
+      window.addEventListener(EVENTS.AUTH_UNAUTHORIZED, handleUnauthorized);
+      return () => {
+        window.removeEventListener(EVENTS.AUTH_UNAUTHORIZED, handleUnauthorized);
+      };
+    }
+  }, [logout]);
+
+  const login = useCallback((token: string, u: User) => {
+    localStorage.setItem(AUTH_TOKEN_KEY, token);
+    setUser(u);
   }, []);
 
   const refresh = useCallback(async () => {

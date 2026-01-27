@@ -1,4 +1,5 @@
 // src/lib/api.ts
+import { AUTH_TOKEN_KEY, API_ENDPOINTS, EVENTS } from "./constants";
 
 export const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
@@ -17,7 +18,7 @@ export class ApiError extends Error {
 
 function authToken(): string | null {
   if (typeof window === "undefined") return null;
-  return localStorage.getItem("hissabi_token");
+  return localStorage.getItem(AUTH_TOKEN_KEY);
 }
 
 type FetchJsonInit = {
@@ -66,6 +67,14 @@ export async function fetchJson<T>(path: string, options: FetchJsonInit = {}): P
     } catch {
       /* noop */
     }
+
+    // Global 401 handling
+    if (res.status === 401) {
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new Event(EVENTS.AUTH_UNAUTHORIZED));
+      }
+    }
+
     throw new ApiError(`Request failed: ${res.status}`, res.status, details);
   }
 
@@ -86,6 +95,9 @@ export type OrganisationSettings = {
   default_currency: string;
   default_locale: string;
   vat_rate?: string | null;
+  // Inventory settings
+  inventory_deduction_mode: "immediate" | "on_shipment" | "manual";
+  enable_recipes: boolean;
   created_at?: string;
   updated_at?: string;
 };
@@ -157,34 +169,33 @@ export type DocumentListItem = {
 export const api = {
   auth: {
     login: (email: string, password: string) =>
-      fetchJson<{ token: string; user: { id: number; email: string; org_id: number } }>(
-        "/auth/login",
+      fetchJson<{ access_token: string; refresh_token: string; user: { id: number; email: string; org_id: number } }>(
+        API_ENDPOINTS.AUTH.LOGIN,
         { method: "POST", body: { email, password } }
       ),
     me: () =>
-      fetchJson<{ id: number; email: string; org_id: number }>("/auth/me"),
+      fetchJson<{ id: number; email: string; org_id: number }>(API_ENDPOINTS.AUTH.ME),
     logout: () =>
-      fetchJson<void>("/auth/logout", { method: "POST" }),
+      fetchJson<void>(API_ENDPOINTS.AUTH.LOGOUT, { method: "POST" }),
   },
 
   uploads: {
-    // Example real upload (multipart)
     create: (file: File) => {
       const fd = new FormData();
       fd.append("file", file);
-      return fetchJson<{ id: number; status: string }>("/uploads", {
+      return fetchJson<{ id: number; status: string }>(API_ENDPOINTS.UPLOADS, {
         method: "POST",
         body: fd,
       });
     },
     list: () =>
       fetchJson<Array<{ id: number; filename: string; status: string; uploaded_at: string }>>(
-        "/uploads"
+        API_ENDPOINTS.UPLOADS
       ),
   },
 
   documents: {
-    list: () => fetchJson<DocumentListItem[]>("/documents"),
+    list: () => fetchJson<DocumentListItem[]>(API_ENDPOINTS.DOCUMENTS),
     get: (id: number) =>
       fetchJson<{
         id: number;
@@ -193,18 +204,17 @@ export const api = {
         content_type: string;
         storage_path: string;
         url?: string | null;
-      }>(`/documents/${id}`),
+      }>(`${API_ENDPOINTS.DOCUMENTS}/${id}`),
   },
 
   inventory: {
     summary: () =>
       fetchJson<Array<{ item_id: number; name: string; unit: string; on_hand: number; avg_unit_cost?: number }>>(
-        "/inventory/summary"
+        API_ENDPOINTS.INVENTORY.SUMMARY
       ),
-    // optional helpers if you add them backend-side later:
     movements: (itemId: number) =>
       fetchJson<Array<{ ts: string; quantity: number; type: "in" | "out"; ref?: string | null }>>(
-        `/inventory/items/${itemId}/movements`
+        API_ENDPOINTS.INVENTORY.MOVEMENTS(itemId)
       ),
   },
 
@@ -215,22 +225,62 @@ export const api = {
         expenses: number;
         profit: number;
         series: Array<{ date: string; revenue: number; expenses: number }>;
-      }>(`/analytics/pnl?range=${range}`),
+      }>(`${API_ENDPOINTS.ANALYTICS.PNL}?range=${range}`),
+    receivables: () =>
+      fetchJson<{
+        total: number;
+        count: number;
+        breakdown: Array<{ category: string; amount: number; count: number }>;
+      }>(`${API_ENDPOINTS.ANALYTICS.BASE}/receivables`),
+    payables: () =>
+      fetchJson<{
+        total: number;
+        count: number;
+        breakdown: Array<{ category: string; amount: number; count: number }>;
+      }>(`${API_ENDPOINTS.ANALYTICS.BASE}/payables`),
+    receivablesList: () =>
+      fetchJson<Array<{
+        id: number;
+        type: "journal" | "transaction";
+        description: string;
+        amount: number;
+        category: string;
+        date: string | null;
+      }>>(`${API_ENDPOINTS.ANALYTICS.BASE}/receivables/list`),
+    payablesList: () =>
+      fetchJson<Array<{
+        id: number;
+        type: "journal" | "transaction";
+        description: string;
+        amount: number;
+        category: string;
+        date: string | null;
+      }>>(`${API_ENDPOINTS.ANALYTICS.BASE}/payables/list`),
+    toggleTransactionPayment: (txnId: number, status: "paid" | "unpaid") =>
+      fetchJson<{ id: number; payment_status: string; payment_date: string | null }>(
+        `${API_ENDPOINTS.ANALYTICS.BASE}/transaction/${txnId}/payment-status?status=${status}`,
+        { method: "PATCH" }
+      ),
+    toggleJournalPayment: (entryId: number, status: "paid" | "unpaid") =>
+      fetchJson<{ id: number; payment_status: string; payment_date: string | null }>(
+        `/journal/entry/${entryId}/payment-status?status=${status}`,
+        { method: "PATCH" }
+      ),
   },
 
   settings: {
-    getOrg: () => fetchJson<OrganisationSettings>("/settings/org"),
+    getOrg: () => fetchJson<OrganisationSettings>(API_ENDPOINTS.SETTINGS.ORG),
     updateOrg: (payload: Partial<OrganisationSettings>) =>
-      fetchJson<OrganisationSettings>("/settings/org", { method: "PUT", body: payload }),
+      fetchJson<OrganisationSettings>(API_ENDPOINTS.SETTINGS.ORG, { method: "PUT", body: payload }),
   },
 
   journal: {
     saveDay: (body: { raw_text: string; date?: string; commit?: boolean }) =>
-      fetchJson<JournalDayResponse>("/journal/day", { method: "POST", body }),
+      fetchJson<JournalDayResponse>(API_ENDPOINTS.JOURNAL.DAY, { method: "POST", body }),
     getDay: async (date?: string) => {
       const query = date ? `?date_str=${encodeURIComponent(date)}` : "";
       try {
-        return await fetchJson<JournalDayResponse>(`/journal/day${query}`);
+        return await fetchJson<JournalDayResponse>(`${API_ENDPOINTS.JOURNAL.DAY}${query}`);
       } catch (err) {
         if (err instanceof ApiError && err.status === 404) {
           return null;
@@ -239,6 +289,6 @@ export const api = {
       }
     },
     resolve: (dayId: number, body: { resolutions: Array<Record<string, unknown>> }) =>
-      fetchJson<JournalDayResponse>(`/journal/day/${dayId}/resolve`, { method: "PATCH", body }),
+      fetchJson<JournalDayResponse>(API_ENDPOINTS.JOURNAL.RESOLVE(dayId), { method: "PATCH", body }),
   },
 };

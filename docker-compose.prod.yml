@@ -19,14 +19,17 @@ services:
       - STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET:-}
       - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY:-}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - SENTRY_DSN=${SENTRY_DSN:-}
       - ENVIRONMENT=production
+      - FEATURE_INVENTORY_ENABLED=false
     restart: always
 
+  # Analytics worker - dedicated to processing jobs
   worker:
     build:
       context: ./backend/analytics-worker
       dockerfile: Dockerfile
-    command: python src/main.py
+    command: celery -A analytics_worker.tasks worker --loglevel=INFO --concurrency=2
     depends_on:
       - db
       - redis
@@ -35,6 +38,28 @@ services:
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-secret}
       - POSTGRES_DB=${POSTGRES_DB:-postgres}
       - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-secret}@db:5432/${POSTGRES_DB:-postgres}
+      - REDIS_URL=redis://redis:6379/0
+      - SENTRY_DSN=${SENTRY_DSN:-}
+      - ENVIRONMENT=production
+    restart: always
+
+  # Celery Beat scheduler - dedicated to scheduling cron jobs
+  # Separated from worker to prevent heavy jobs from blocking the scheduler
+  beat:
+    build:
+      context: ./backend/analytics-worker
+      dockerfile: Dockerfile
+    command: celery -A analytics_worker.tasks beat --loglevel=INFO
+    depends_on:
+      - db
+      - redis
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER:-postgres}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-secret}
+      - POSTGRES_DB=${POSTGRES_DB:-postgres}
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-secret}@db:5432/${POSTGRES_DB:-postgres}
+      - REDIS_URL=redis://redis:6379/0
+      - ENVIRONMENT=production
     restart: always
 
   db:
@@ -57,3 +82,5 @@ services:
 
 volumes:
   pgdata:
+
+

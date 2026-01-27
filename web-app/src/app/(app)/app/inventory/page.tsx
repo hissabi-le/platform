@@ -5,6 +5,10 @@ import { useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
 
 import { api } from "@/lib/api";
+import { StatCard } from "@/components/StatCard";
+import { ErrorAlert } from "@/components/Alert";
+import { CardSkeleton, TableSkeleton } from "@/components/Skeleton";
+import { formatCurrency, formatNumber } from "@/lib/format";
 
 type SelectedItem = {
   id: number;
@@ -35,116 +39,175 @@ export default function InventoryPage() {
 
   return (
     <div className="space-y-6">
-      <header className="space-y-1">
-        <h1 className="text-2xl font-semibold">Inventory</h1>
-        <p className="text-sm text-gray-500">Monitor stock on hand, recent movements, and weighted average costs.</p>
+      {/* Header */}
+      <header>
+        <h1 className="text-2xl font-semibold text-slate-900">Inventory</h1>
+        <p className="text-sm text-slate-500 mt-1">
+          Monitor stock levels, movements, and weighted average costs
+        </p>
       </header>
 
-      {summaryQuery.isLoading && <p className="text-sm text-gray-500">Loading inventory summary…</p>}
-      {summaryQuery.error && <p className="text-sm text-red-600">Unable to load inventory. Refresh to retry.</p>}
+      {/* Error State */}
+      {summaryQuery.error && (
+        <ErrorAlert error={summaryQuery.error} onRetry={() => summaryQuery.refetch()} />
+      )}
 
+      {/* Loading State */}
+      {summaryQuery.isLoading && (
+        <div className="space-y-6">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <CardSkeleton />
+            <CardSkeleton />
+            <CardSkeleton />
+          </div>
+          <TableSkeleton rows={5} columns={5} />
+        </div>
+      )}
+
+      {/* Data Display */}
       {summaryQuery.data && (
         <>
-          <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            <InventoryCard title="Tracked items" value={totals.totalItems.toString()} />
-            <InventoryCard title="Units on hand" value={totals.totalQty.toFixed(2)} />
-            <InventoryCard title="Inventory value" value={`$${totals.totalValue.toFixed(2)}`} />
+          {/* Summary Cards */}
+          <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <StatCard
+              title="Tracked Items"
+              value={totals.totalItems.toString()}
+              accent="bg-blue-500"
+            />
+            <StatCard
+              title="Units on Hand"
+              value={formatNumber(totals.totalQty)}
+              accent="bg-emerald-500"
+            />
+            <StatCard
+              title="Inventory Value"
+              value={formatCurrency(totals.totalValue)}
+              accent="bg-amber-500"
+            />
           </section>
 
+          {/* Main Content Grid */}
           <section className="grid gap-6 lg:grid-cols-[3fr_2fr]">
-            <div className="overflow-hidden rounded-xl border bg-white shadow-sm">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="text-left text-xs uppercase text-gray-500">
-                    <th className="px-4 py-3">Item</th>
-                    <th className="px-4 py-3">Unit</th>
-                    <th className="px-4 py-3 text-right">On hand</th>
-                    <th className="px-4 py-3 text-right">Avg cost</th>
-                    <th className="px-4 py-3 text-right">Value</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {summaryQuery.data.map((row) => {
-                    const value = (row.on_hand ?? 0) * (row.avg_unit_cost ?? 0);
-                    const isActive = selected?.id === row.item_id;
-                    return (
-                      <tr
-                        key={row.item_id}
-                        className={`border-t text-sm ${isActive ? "bg-slate-50" : ""}`}
-                        onClick={() =>
-                          setSelected({ id: row.item_id, name: row.name, unit: row.unit })
-                        }
-                      >
-                        <td className="cursor-pointer px-4 py-3 font-medium text-slate-700">{row.name}</td>
-                        <td className="px-4 py-3 text-gray-500">{row.unit}</td>
-                        <td className="px-4 py-3 text-right text-gray-600">{(row.on_hand ?? 0).toFixed(2)}</td>
-                        <td className="px-4 py-3 text-right text-gray-600">
-                          {row.avg_unit_cost != null ? `$${row.avg_unit_cost.toFixed(2)}` : "-"}
-                        </td>
-                        <td className="px-4 py-3 text-right text-gray-600">${value.toFixed(2)}</td>
+            {/* Inventory Table */}
+            <div className="rounded-xl border bg-white shadow-sm overflow-hidden">
+              <div className="px-6 py-4 border-b">
+                <h2 className="font-semibold text-slate-900">Stock Summary</h2>
+              </div>
+              {summaryQuery.data.length === 0 ? (
+                <div className="p-6 text-center text-slate-500">
+                  No inventory items yet. Upload a spreadsheet or log purchases in your journal.
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead className="bg-slate-50">
+                      <tr className="text-left text-xs uppercase text-slate-500">
+                        <th className="px-6 py-3 font-medium">Item</th>
+                        <th className="px-6 py-3 font-medium">Unit</th>
+                        <th className="px-6 py-3 font-medium text-right">On Hand</th>
+                        <th className="px-6 py-3 font-medium text-right">Avg Cost</th>
+                        <th className="px-6 py-3 font-medium text-right">Value</th>
                       </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {summaryQuery.data.map((row) => {
+                        const value = (row.on_hand ?? 0) * (row.avg_unit_cost ?? 0);
+                        const isActive = selected?.id === row.item_id;
+                        return (
+                          <tr
+                            key={row.item_id}
+                            onClick={() => setSelected({ id: row.item_id, name: row.name, unit: row.unit })}
+                            className={`cursor-pointer transition-colors ${isActive ? "bg-slate-100" : "hover:bg-slate-50"}`}
+                          >
+                            <td className="px-6 py-4 font-medium text-slate-900">{row.name}</td>
+                            <td className="px-6 py-4 text-slate-600">{row.unit}</td>
+                            <td className="px-6 py-4 text-right text-slate-700">
+                              {formatNumber(row.on_hand ?? 0)}
+                            </td>
+                            <td className="px-6 py-4 text-right text-slate-600">
+                              {row.avg_unit_cost != null ? formatCurrency(row.avg_unit_cost) : "—"}
+                            </td>
+                            <td className="px-6 py-4 text-right font-medium text-slate-900">
+                              {formatCurrency(value)}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
 
-            <div className="space-y-4 rounded-xl border bg-white p-6 shadow-sm">
-              <header className="space-y-1">
-                <h2 className="text-lg font-semibold">Recent movements</h2>
-                <p className="text-sm text-gray-500">
-                  Select an item to review stock inflows and outflows. Weighted average cost is applied automatically.
+            {/* Movements Panel */}
+            <div className="rounded-xl border bg-white shadow-sm">
+              <div className="px-6 py-4 border-b">
+                <h2 className="font-semibold text-slate-900">Recent Movements</h2>
+                <p className="text-sm text-slate-500 mt-1">
+                  {selected ? `Movements for ${selected.name}` : "Select an item to view movements"}
                 </p>
-              </header>
+              </div>
 
-              {!selected && <p className="text-sm text-gray-500">Pick an item in the table to inspect individual movements.</p>}
+              <div className="p-6">
+                {!selected && (
+                  <div className="flex items-center justify-center h-48 text-slate-400">
+                    <div className="text-center">
+                      <svg className="w-12 h-12 mx-auto mb-3 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+                      </svg>
+                      <p className="text-sm">Click an item to see its stock history</p>
+                    </div>
+                  </div>
+                )}
 
-              {selected && movementsQuery.isLoading && <p className="text-sm text-gray-500">Loading movements…</p>}
+                {selected && movementsQuery.isLoading && (
+                  <div className="flex items-center justify-center h-48">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-slate-900"></div>
+                  </div>
+                )}
 
-              {selected && movementsQuery.data && movementsQuery.data.length === 0 && (
-                <p className="text-sm text-gray-500">No movements recorded for {selected.name} yet.</p>
-              )}
+                {selected && movementsQuery.data && movementsQuery.data.length === 0 && (
+                  <div className="flex items-center justify-center h-48 text-slate-500">
+                    No movements recorded for {selected.name}
+                  </div>
+                )}
 
-              {selected && movementsQuery.data && movementsQuery.data.length > 0 && (
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="text-left text-xs uppercase text-gray-500">
-                      <th className="pb-2">Date</th>
-                      <th className="pb-2">Type</th>
-                      <th className="pb-2 text-right">Quantity</th>
-                      <th className="pb-2">Reference</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {movementsQuery.data.map((movement, index) => (
-                      <tr key={`${movement.ts}-${index}`} className="border-t">
-                        <td className="py-2 text-gray-600">{format(new Date(movement.ts), "dd/MM/yy HH:mm")}</td>
-                        <td className="py-2 text-gray-600">{movement.type === "in" ? "Stock in" : "Stock out"}</td>
-                        <td className="py-2 text-right text-gray-600">{movement.quantity.toFixed(2)}</td>
-                        <td className="py-2 text-gray-500">{movement.ref ?? "—"}</td>
-                      </tr>
+                {selected && movementsQuery.data && movementsQuery.data.length > 0 && (
+                  <div className="space-y-3">
+                    {movementsQuery.data.slice(0, 10).map((movement, index) => (
+                      <div
+                        key={`${movement.ts}-${index}`}
+                        className="flex items-center justify-between py-2 border-b last:border-0"
+                      >
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${movement.type === "in"
+                                ? "bg-emerald-100 text-emerald-800"
+                                : "bg-rose-100 text-rose-800"
+                              }`}>
+                              {movement.type === "in" ? "IN" : "OUT"}
+                            </span>
+                            <span className="text-sm text-slate-600">
+                              {format(new Date(movement.ts), "MMM dd, HH:mm")}
+                            </span>
+                          </div>
+                          {movement.ref && (
+                            <span className="text-xs text-slate-400 mt-0.5 block">{movement.ref}</span>
+                          )}
+                        </div>
+                        <div className={`text-sm font-medium ${movement.type === "in" ? "text-emerald-600" : "text-rose-600"
+                          }`}>
+                          {movement.type === "in" ? "+" : "-"}{formatNumber(movement.quantity)} {selected.unit}
+                        </div>
+                      </div>
                     ))}
-                  </tbody>
-                </table>
-              )}
+                  </div>
+                )}
+              </div>
             </div>
           </section>
         </>
       )}
-    </div>
-  );
-}
-
-type InventoryCardProps = {
-  title: string;
-  value: string;
-};
-
-function InventoryCard({ title, value }: InventoryCardProps) {
-  return (
-    <div className="rounded-xl border bg-white p-4 shadow-sm">
-      <div className="text-xs uppercase text-gray-500">{title}</div>
-      <div className="mt-2 text-2xl font-semibold text-slate-800">{value}</div>
     </div>
   );
 }

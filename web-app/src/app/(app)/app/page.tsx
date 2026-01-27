@@ -4,31 +4,48 @@ import { useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { format, parseISO } from "date-fns";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { toast } from "sonner";
+import {
+  AreaChart,
+  Area,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+} from "recharts";
 
 import type { JournalDayResponse } from "@/lib/api";
 import { api } from "@/lib/api";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { StatCard } from "@/components/StatCard";
+import { ErrorAlert, Alert } from "@/components/Alert";
+import { CardSkeleton, ChartSkeleton } from "@/components/Skeleton";
+import { formatCurrency, formatPercent, getUTCDateString } from "@/lib/format";
 
 const RANGE_OPTIONS = ["1m", "3m", "6m", "1y"] as const;
 type RangeOption = (typeof RANGE_OPTIONS)[number];
 
-type NavAction = {
-  value: string;
-  label: string;
-  href?: string;
-  message?: string;
+const RANGE_LABELS: Record<RangeOption, string> = {
+  "1m": "Last month",
+  "3m": "Last 3 months",
+  "6m": "Last 6 months",
+  "1y": "Last year",
 };
 
-const NAV_ACTIONS: NavAction[] = [
+const NAV_ACTIONS = [
   { value: "", label: "Choose next action" },
-  { value: "analytics", label: "Go to analytics dashboard", href: "/app/analytics" },
-  { value: "documents", label: "View generated documents", href: "/app/documents" },
-  { value: "inventory", label: "Review inventory snapshot", href: "/app/inventory" },
-  { value: "balance-sheet", label: "Generate balance sheet snapshot", message: "Queued balance sheet generation for your latest data." },
-  { value: "pnl", label: "Generate profit & loss report", message: "Profit & loss report will refresh shortly." },
+  { value: "analytics", label: "View detailed analytics", href: "/app/analytics" },
+  { value: "documents", label: "Browse documents", href: "/app/documents" },
+  { value: "inventory", label: "Check inventory", href: "/app/inventory" },
 ];
 
-const todayIso = format(new Date(), "yyyy-MM-dd");
+const todayIso = getUTCDateString();
 
 export default function AppDashboard() {
   const router = useRouter();
@@ -39,10 +56,21 @@ export default function AppDashboard() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [uploadResult, setUploadResult] = useState<{ id: number; status: string } | null>(null);
   const [selectedAction, setSelectedAction] = useState("");
+  const [dragActive, setDragActive] = useState(false);
 
   const pnlQuery = useQuery({
     queryKey: ["analytics-pnl", range],
     queryFn: () => api.analytics.pnl(range),
+  });
+
+  const receivablesQuery = useQuery({
+    queryKey: ["analytics-receivables"],
+    queryFn: () => api.analytics.receivables(),
+  });
+
+  const payablesQuery = useQuery({
+    queryKey: ["analytics-payables"],
+    queryFn: () => api.analytics.payables(),
   });
 
   const saveJournal = useMutation({
@@ -52,8 +80,8 @@ export default function AppDashboard() {
       setJournalText("");
       toast.success("Journal saved. Totals refreshed.");
     },
-    onError: () => {
-      toast.error("Unable to save journal entry. Please try again.");
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : "Unable to save journal entry.");
     },
   });
 
@@ -61,54 +89,38 @@ export default function AppDashboard() {
     mutationFn: (file: File) => api.uploads.create(file),
     onSuccess: (data) => {
       setUploadResult(data);
+      setSelectedFile(null);
       setSelectedAction("");
-      toast.success("Upload complete.");
+      toast.success("Upload complete!");
     },
-    onError: () => {
-      toast.error("Upload failed. Please verify the file and try again.");
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : "Upload failed.");
     },
   });
 
-  const analyticsCards = useMemo(() => {
-    if (!pnlQuery.data) return [];
-    const revenue = pnlQuery.data.revenue;
-    const expenses = pnlQuery.data.expenses;
-    const profit = pnlQuery.data.profit;
-    const margin = revenue ? ((profit / revenue) * 100).toFixed(1) : "0";
-    return [
-      { title: "Revenue", value: revenue.toFixed(2), accent: "bg-emerald-500" },
-      { title: "Expenses", value: expenses.toFixed(2), accent: "bg-rose-500" },
-      { title: "Net Profit", value: profit.toFixed(2), accent: "bg-slate-900" },
-      { title: "Margin", value: `${margin}%`, accent: "bg-amber-500" },
-    ];
-  }, [pnlQuery.data]);
+  const margin = pnlQuery.data?.revenue
+    ? (pnlQuery.data.profit / pnlQuery.data.revenue) * 100
+    : 0;
 
-  const pnlSeries = useMemo(() => pnlQuery.data?.series ?? [], [pnlQuery.data?.series]);
-  const formattedSeries = useMemo(
-    () =>
-      pnlSeries.map((period) => ({
-        ...period,
-        label: format(parseISO(period.date), "dd/MM/yy"),
-      })),
-    [pnlSeries]
-  );
-  const pnlMax = useMemo(() => {
-    if (!pnlSeries.length) return 1;
-    return Math.max(
-      ...pnlSeries.map((item) => Math.max(item.revenue, item.expenses, 1))
-    );
-  }, [pnlSeries]);
-  const profitMax = useMemo(() => {
-    if (!pnlSeries.length) return 1;
-    return Math.max(...pnlSeries.map((item) => Math.abs(item.revenue - item.expenses)), 1);
-  }, [pnlSeries]);
+  const formattedSeries = useMemo(() => {
+    return (pnlQuery.data?.series ?? []).map((row) => ({
+      ...row,
+      label: format(parseISO(row.date), "MMM dd"),
+      profit: row.revenue - row.expenses,
+    }));
+  }, [pnlQuery.data?.series]);
 
-  const journalTotals = journalResult?.totals;
-  const journalClarifications = journalResult?.clarifications ?? [];
+  const handleJournalSubmit = () => {
+    if (!journalText.trim()) {
+      toast.error("Please enter at least one line.");
+      return;
+    }
+    saveJournal.mutate();
+  };
 
   const handleUpload = () => {
     if (!selectedFile) {
-      toast.error("Please choose a file first.");
+      toast.error("Please select a file first.");
       return;
     }
     uploadMutation.mutate(selectedFile);
@@ -116,270 +128,342 @@ export default function AppDashboard() {
 
   const handleActionSelect = (value: string) => {
     setSelectedAction(value);
-    const target = NAV_ACTIONS.find((item) => item.value === value);
-    if (!target) return;
-    if (target.href) {
-      router.push(target.href);
-    } else if (target.message) {
-      toast.info(target.message);
+    const action = NAV_ACTIONS.find((a) => a.value === value);
+    if (action?.href) {
+      router.push(action.href);
     }
   };
 
-  const handleJournalSubmit = () => {
-    if (!journalText.trim()) {
-      toast.error("Write a quick summary before saving.");
-      return;
-    }
-    saveJournal.mutate();
+  const formatFileSize = (bytes: number): string => {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+    return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
   };
 
   return (
     <div className="space-y-6">
+      {/* Header */}
       <header className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Business overview</h1>
-          <p className="text-sm text-gray-500">Track revenue, expenses, and daily activity at a glance.</p>
+          <h1 className="text-2xl font-semibold text-slate-900">Dashboard</h1>
+          <p className="text-sm text-slate-500 mt-1">
+            Track revenue, expenses, and daily activity at a glance
+          </p>
         </div>
-        <div className="flex items-center gap-2 text-sm">
-          <span className="text-gray-500">Analytics range</span>
+        <div className="flex items-center gap-2">
+          <Label htmlFor="range" className="text-sm text-slate-600">Period:</Label>
           <select
+            id="range"
             value={range}
-            onChange={(event) => setRange(event.target.value as RangeOption)}
-            className="rounded border px-3 py-2"
+            onChange={(e) => setRange(e.target.value as RangeOption)}
+            className="rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-slate-900"
           >
-            {RANGE_OPTIONS.map((option) => (
-              <option key={option} value={option}>
-                {option.toUpperCase()}
-              </option>
+            {RANGE_OPTIONS.map((opt) => (
+              <option key={opt} value={opt}>{RANGE_LABELS[opt]}</option>
             ))}
           </select>
         </div>
       </header>
 
-      <div className="grid gap-6 lg:grid-cols-[3fr_2fr]">
-        <section className="space-y-5">
-          <div className="grid gap-3 sm:grid-cols-2">
-            {analyticsCards.map((card) => (
-              <div key={card.title} className="rounded-xl border bg-white p-4 shadow-sm">
-                <div className="flex items-center justify-between text-sm text-gray-500">
-                  <span>{card.title}</span>
-                  <span className={`h-2 w-2 rounded-full ${card.accent}`}></span>
-                </div>
-                <div className="mt-2 text-2xl font-semibold">${card.value}</div>
-              </div>
-            ))}
-            {!pnlQuery.data && (
-              <div className="rounded-xl border bg-white p-6 text-sm text-gray-500 shadow-sm">
-                Analytics will appear here once transactions are processed.
-              </div>
-            )}
-          </div>
+      {/* Error State */}
+      {pnlQuery.error && <ErrorAlert error={pnlQuery.error} onRetry={() => pnlQuery.refetch()} />}
 
-          <div className="rounded-xl border bg-white p-6 shadow-sm">
-            <div className="flex items-center justify-between text-sm text-gray-500">
-              <span>Revenue vs expenses</span>
-              {pnlQuery.isLoading && <span>Loading…</span>}
-            </div>
-            <div className="mt-4 flex items-end gap-4">
-              {formattedSeries.length === 0 && (
-                <p className="text-sm text-gray-500">Upload a spreadsheet or add a journal entry to see trends.</p>
-              )}
-              {formattedSeries.map((period) => {
-                const revenueHeight = Math.round((period.revenue / pnlMax) * 100);
-                const expenseHeight = Math.round((period.expenses / pnlMax) * 100);
-                const label = period.label;
-                return (
-                  <div key={`${label}-chart`} className="flex flex-1 flex-col items-center">
-                    <div className="relative flex h-32 w-full items-end justify-between overflow-hidden rounded bg-gray-100">
-                      <div
-                        className="ml-1 h-full w-1/2 self-end rounded-t bg-emerald-500"
-                        style={{ height: `${revenueHeight}%` }}
-                        title={`Revenue ${period.revenue.toFixed(2)}`}
-                      ></div>
-                      <div
-                        className="mr-1 h-full w-1/2 self-end rounded-t bg-rose-500"
-                        style={{ height: `${expenseHeight}%` }}
-                        title={`Expenses ${period.expenses.toFixed(2)}`}
-                      ></div>
-                    </div>
-                  <div className="mt-2 text-xs text-gray-500">{label}</div>
-                </div>
-              );
-              })}
-            </div>
+      {/* Analytics Section */}
+      {pnlQuery.isLoading && (
+        <div className="space-y-6">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <CardSkeleton />
+            <CardSkeleton />
+            <CardSkeleton />
+            <CardSkeleton />
           </div>
+          <ChartSkeleton />
+        </div>
+      )}
 
-          {formattedSeries.length > 0 && (
+      {pnlQuery.data && (
+        <div className="space-y-6">
+          {/* KPI Cards */}
+          <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <StatCard title="Revenue" value={formatCurrency(pnlQuery.data.revenue)} accent="bg-emerald-500" />
+            <StatCard title="Expenses" value={formatCurrency(pnlQuery.data.expenses)} accent="bg-rose-500" />
+            <StatCard title="Net Profit" value={formatCurrency(pnlQuery.data.profit)} accent="bg-slate-900" />
+            <StatCard title="Margin" value={formatPercent(margin)} accent="bg-amber-500" />
+          </section>
+
+          {/* Receivables & Payables */}
+          <section className="grid gap-4 sm:grid-cols-2">
+            <Link
+              href="/app/receivables"
+              className="rounded-xl border bg-white p-6 shadow-sm hover:border-blue-300 hover:shadow-md transition-all cursor-pointer block"
+            >
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="font-semibold text-slate-900">Accounts Receivable</h3>
+                <span className="text-xs text-slate-500">Money owed to you →</span>
+              </div>
+              <div className="flex items-end gap-2">
+                <span className="text-3xl font-bold text-blue-600">
+                  {formatCurrency(receivablesQuery.data?.total ?? 0)}
+                </span>
+                {(receivablesQuery.data?.count ?? 0) > 0 && (
+                  <span className="text-sm text-slate-500 mb-1">
+                    ({receivablesQuery.data?.count} unpaid)
+                  </span>
+                )}
+              </div>
+              {receivablesQuery.data?.breakdown?.slice(0, 3).map((row) => (
+                <div key={row.category} className="mt-2 flex justify-between text-sm">
+                  <span className="text-slate-600">{row.category}</span>
+                  <span className="font-medium text-slate-900">{formatCurrency(row.amount)}</span>
+                </div>
+              ))}
+            </Link>
+
+            <Link
+              href="/app/receivables"
+              className="rounded-xl border bg-white p-6 shadow-sm hover:border-orange-300 hover:shadow-md transition-all cursor-pointer block"
+            >
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="font-semibold text-slate-900">Accounts Payable</h3>
+                <span className="text-xs text-slate-500">Money you owe →</span>
+              </div>
+              <div className="flex items-end gap-2">
+                <span className="text-3xl font-bold text-orange-600">
+                  {formatCurrency(payablesQuery.data?.total ?? 0)}
+                </span>
+                {(payablesQuery.data?.count ?? 0) > 0 && (
+                  <span className="text-sm text-slate-500 mb-1">
+                    ({payablesQuery.data?.count} unpaid)
+                  </span>
+                )}
+              </div>
+              {payablesQuery.data?.breakdown?.slice(0, 3).map((row) => (
+                <div key={row.category} className="mt-2 flex justify-between text-sm">
+                  <span className="text-slate-600">{row.category}</span>
+                  <span className="font-medium text-slate-900">{formatCurrency(row.amount)}</span>
+                </div>
+              ))}
+            </Link>
+          </section>
+
+          {/* Charts Row */}
+          <div className="grid gap-6 lg:grid-cols-2">
+            {/* Revenue vs Expenses Chart */}
             <div className="rounded-xl border bg-white p-6 shadow-sm">
-              <div className="flex items-center justify-between text-sm text-gray-500">
-                <span>Net profit by period</span>
-              </div>
-              <div className="mt-4 flex items-end gap-4">
-                {formattedSeries.map((period) => {
-                  const profit = period.revenue - period.expenses;
-                  const height = Math.round((Math.abs(profit) / profitMax) * 100);
-                  const positive = profit >= 0;
-                  return (
-                    <div key={`${period.label}-profit`} className="flex flex-1 flex-col items-center">
-                      <div className="flex h-28 w-full items-end justify-center overflow-hidden rounded bg-gray-100">
-                        <div
-                          className={`w-3/5 rounded-t ${positive ? "bg-emerald-500" : "bg-rose-500"}`}
-                          style={{ height: `${height}%` }}
-                          title={`Net ${profit.toFixed(2)}`}
-                        ></div>
-                      </div>
-                      <div className="mt-2 text-xs text-gray-500">{period.label}</div>
-                    </div>
-                  );
-                })}
+              <h3 className="font-semibold text-slate-900 mb-4">Revenue vs Expenses</h3>
+              {formattedSeries.length === 0 ? (
+                <div className="flex items-center justify-center h-48 text-slate-500">
+                  <p className="text-sm">Upload data to see trends</p>
+                </div>
+              ) : (
+                <ResponsiveContainer width="100%" height={200}>
+                  <AreaChart data={formattedSeries} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                    <defs>
+                      <linearGradient id="revGrad" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#10b981" stopOpacity={0.8} />
+                        <stop offset="95%" stopColor="#10b981" stopOpacity={0.05} />
+                      </linearGradient>
+                      <linearGradient id="expGrad" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#f43f5e" stopOpacity={0.8} />
+                        <stop offset="95%" stopColor="#f43f5e" stopOpacity={0.05} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                    <XAxis dataKey="label" tick={{ fontSize: 11, fill: "#64748b" }} tickLine={false} />
+                    <YAxis tick={{ fontSize: 11, fill: "#64748b" }} tickLine={false} tickFormatter={(v) => `$${v}`} />
+                    <Tooltip formatter={(v) => [formatCurrency(Number(v))]} />
+                    <Area type="monotone" dataKey="revenue" stroke="#10b981" fill="url(#revGrad)" />
+                    <Area type="monotone" dataKey="expenses" stroke="#f43f5e" fill="url(#expGrad)" />
+                  </AreaChart>
+                </ResponsiveContainer>
+              )}
+            </div>
+
+            {/* Net Profit Chart */}
+            <div className="rounded-xl border bg-white p-6 shadow-sm">
+              <h3 className="font-semibold text-slate-900 mb-4">Net Profit by Period</h3>
+              {formattedSeries.length === 0 ? (
+                <div className="flex items-center justify-center h-48 text-slate-500">
+                  <p className="text-sm">No data available</p>
+                </div>
+              ) : (
+                <ResponsiveContainer width="100%" height={200}>
+                  <BarChart data={formattedSeries} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                    <XAxis dataKey="label" tick={{ fontSize: 11, fill: "#64748b" }} tickLine={false} />
+                    <YAxis tick={{ fontSize: 11, fill: "#64748b" }} tickLine={false} tickFormatter={(v) => `$${v}`} />
+                    <Tooltip formatter={(v) => [formatCurrency(Number(v)), "Profit"]} />
+                    <Bar dataKey="profit" fill="#0f172a" radius={[4, 4, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Action Cards */}
+      <div className="grid gap-6 lg:grid-cols-2">
+        {/* Quick Journal Entry */}
+        <div className="rounded-xl border bg-white p-6 shadow-sm space-y-4">
+          <header>
+            <h2 className="font-semibold text-slate-900">Quick Journal Entry</h2>
+            <p className="text-sm text-slate-500 mt-1">Log today&apos;s activity in seconds</p>
+          </header>
+
+          <div className="space-y-3">
+            <div className="space-y-2">
+              <Label htmlFor="journal-date">Date</Label>
+              <Input
+                id="journal-date"
+                type="date"
+                value={journalDate}
+                onChange={(e) => setJournalDate(e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="journal-text">Notes</Label>
+              <textarea
+                id="journal-text"
+                rows={4}
+                value={journalText}
+                onChange={(e) => setJournalText(e.target.value)}
+                placeholder="sold 5 coffees for $25&#10;bought milk $6"
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-slate-900"
+              />
+            </div>
+            <Button
+              onClick={handleJournalSubmit}
+              disabled={saveJournal.isPending || !journalText.trim()}
+              className="w-full"
+            >
+              {saveJournal.isPending ? "Saving..." : "Save Journal"}
+            </Button>
+          </div>
+
+          {journalResult?.totals && (
+            <div className="rounded-lg bg-slate-50 p-4 space-y-2">
+              <p className="font-medium text-slate-700 text-sm">Today&apos;s Totals</p>
+              <div className="grid grid-cols-2 gap-2 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-slate-600">Revenue</span>
+                  <span className="text-emerald-600">{formatCurrency(journalResult.totals.revenue)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-600">Cost</span>
+                  <span className="text-rose-600">{formatCurrency(journalResult.totals.cost)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-600">Net</span>
+                  <span className="font-medium">{formatCurrency(journalResult.totals.net)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-600">ROI</span>
+                  <span>{journalResult.totals.roi != null ? `${journalResult.totals.roi.toFixed(1)}%` : "—"}</span>
+                </div>
               </div>
             </div>
           )}
-        </section>
 
-        <section className="space-y-6">
-          <div className="space-y-4 rounded-xl border bg-white p-6 shadow-sm">
-            <header className="space-y-1">
-              <h2 className="text-lg font-semibold">Daily accounting journal</h2>
-              <p className="text-sm text-gray-500">Log today’s activity; we reconcile inventory and analytics automatically.</p>
-            </header>
-            <div className="grid gap-3 sm:grid-cols-[140px_1fr]">
-              <label className="text-sm text-gray-600">
-                Date
+          {journalResult?.clarifications && journalResult.clarifications.length > 0 && (
+            <Alert variant="warning" title="Clarifications needed">
+              <ul className="list-disc pl-5 space-y-1">
+                {journalResult.clarifications.map((c) => (
+                  <li key={c.question}>{c.question}</li>
+                ))}
+              </ul>
+              <p className="mt-2 text-xs">Visit the Journal page to resolve these.</p>
+            </Alert>
+          )}
+        </div>
+
+        {/* Quick Upload */}
+        <div className="rounded-xl border bg-white p-6 shadow-sm space-y-4">
+          <header>
+            <h2 className="font-semibold text-slate-900">Quick Upload</h2>
+            <p className="text-sm text-slate-500 mt-1">Drop a spreadsheet or statement</p>
+          </header>
+
+          <div
+            onDragEnter={(e) => { e.preventDefault(); setDragActive(true); }}
+            onDragLeave={(e) => { e.preventDefault(); setDragActive(false); }}
+            onDragOver={(e) => e.preventDefault()}
+            onDrop={(e) => {
+              e.preventDefault();
+              setDragActive(false);
+              const file = e.dataTransfer.files?.[0];
+              if (file) {
+                setSelectedFile(file);
+                setUploadResult(null);
+              }
+            }}
+            className={`relative flex flex-col items-center justify-center rounded-lg border-2 border-dashed p-8 transition-colors ${dragActive ? "border-emerald-500 bg-emerald-50" : selectedFile ? "border-slate-300 bg-slate-50" : "border-slate-300"
+              }`}
+          >
+            {selectedFile ? (
+              <div className="text-center">
+                <svg className="w-10 h-10 mx-auto text-emerald-500 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+                <p className="font-medium text-slate-900">{selectedFile.name}</p>
+                <p className="text-sm text-slate-500">{formatFileSize(selectedFile.size)}</p>
+                <button
+                  onClick={() => { setSelectedFile(null); setUploadResult(null); }}
+                  className="mt-2 text-sm text-slate-600 underline hover:text-slate-900"
+                >
+                  Remove
+                </button>
+              </div>
+            ) : (
+              <div className="text-center">
+                <svg className="w-10 h-10 mx-auto text-slate-400 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                </svg>
+                <p className="font-medium text-slate-900">Drop files here</p>
+                <p className="text-sm text-slate-500">CSV, Excel, PDF</p>
                 <input
-                  type="date"
-                  value={journalDate}
-                  onChange={(event) => setJournalDate(event.target.value)}
-                  className="mt-1 w-full rounded border px-3 py-2 text-sm"
-                />
-              </label>
-              <label className="text-sm text-gray-600">
-                Notes
-                <textarea
-                  rows={4}
-                  value={journalText}
-                  onChange={(event) => setJournalText(event.target.value)}
-                  placeholder="sold 5 coffees for $25\nbought milk $6\npaid rent $400"
-                  className="mt-1 w-full rounded border px-3 py-2 font-mono text-sm"
-                />
-              </label>
-            </div>
-            <button
-              onClick={handleJournalSubmit}
-              disabled={saveJournal.isPending}
-              className="rounded bg-slate-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
-            >
-              {saveJournal.isPending ? "Saving…" : "Save journal"}
-            </button>
-
-            {journalTotals && (
-              <div className="grid gap-2 rounded-lg bg-slate-50 p-4 text-sm">
-                <div className="font-medium text-slate-700">Today&apos;s totals</div>
-                <div className="flex justify-between"><span>Revenue</span><span>${journalTotals.revenue}</span></div>
-                <div className="flex justify-between"><span>Cost</span><span>${journalTotals.cost}</span></div>
-                <div className="flex justify-between"><span>Net</span><span>${journalTotals.net}</span></div>
-                <div className="flex justify-between"><span>Cumulative net</span><span>${journalTotals.cumulative_net}</span></div>
-                <div className="flex justify-between"><span>ROI</span><span>{journalTotals.roi != null ? `${journalTotals.roi.toFixed(2)}%` : "—"}</span></div>
-              </div>
-            )}
-
-            {journalClarifications.length > 0 && (
-              <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-                <div className="font-medium">Clarifications needed</div>
-                <ul className="mt-1 list-disc space-y-1 pl-5">
-                  {journalClarifications.map((item) => (
-                    <li key={item.question}>{item.question}</li>
-                  ))}
-                </ul>
-                <p className="mt-2 text-xs text-amber-700">
-                  Resolve open questions from the journal detail page after reviewing with your team.
-                </p>
-              </div>
-            )}
-          </div>
-
-          <div className="space-y-4 rounded-xl border bg-white p-6 shadow-sm">
-            <header className="space-y-1">
-              <h2 className="text-lg font-semibold">Upload dashboard</h2>
-              <p className="text-sm text-gray-500">Send us spreadsheets or statements and route straight to the next workflow.</p>
-            </header>
-
-            <div
-              onDrop={(event) => {
-                event.preventDefault();
-                const file = event.dataTransfer.files?.[0];
-                if (file) {
-                  setSelectedFile(file);
-                  setUploadResult(null);
-                }
-              }}
-              onDragOver={(event) => event.preventDefault()}
-              className="flex h-36 flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed px-4 text-sm"
-            >
-              {selectedFile ? (
-                <>
-                  <div>
-                    <span className="font-medium">{selectedFile.name}</span>
-                    <span className="ml-2 text-xs text-gray-500">{Math.round(selectedFile.size / 1024)} KB</span>
-                  </div>
-                  <button
-                    className="text-xs text-slate-600 underline"
-                    onClick={() => {
-                      setSelectedFile(null);
-                      setUploadResult(null);
-                    }}
-                  >
-                    Remove
-                  </button>
-                </>
-              ) : (
-                <>
-                  <div className="text-sm font-medium">Drag & drop files here</div>
-                  <div className="text-xs text-gray-500">Supported: CSV, Excel, PDF</div>
-                  <input
-                    type="file"
-                    accept=".xlsx,.xls,.csv,application/pdf"
-                    onChange={(event) => {
-                      const file = event.target.files?.[0] ?? null;
+                  type="file"
+                  accept=".xlsx,.xls,.csv,.pdf"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) {
                       setSelectedFile(file);
                       setUploadResult(null);
-                    }}
-                    className="mt-2 text-xs"
-                  />
-                </>
-              )}
-            </div>
-
-            <button
-              onClick={handleUpload}
-              disabled={!selectedFile || uploadMutation.isPending}
-              className="rounded bg-emerald-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
-            >
-              {uploadMutation.isPending ? "Uploading…" : "Upload file"}
-            </button>
-
-            {uploadResult && (
-              <div className="space-y-2 rounded-lg bg-emerald-50 p-4 text-sm text-emerald-700">
-                <div className="font-medium">Upload ready</div>
-                <div>Document #{uploadResult.id} saved with status <b>{uploadResult.status}</b>.</div>
-                <label className="block text-xs text-emerald-700">
-                  Next steps
-                  <select
-                    value={selectedAction}
-                    onChange={(event) => handleActionSelect(event.target.value)}
-                    className="mt-1 w-full rounded border px-3 py-2 text-sm"
-                  >
-                    {NAV_ACTIONS.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                    }
+                  }}
+                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                />
               </div>
             )}
           </div>
-        </section>
+
+          <Button
+            onClick={handleUpload}
+            disabled={!selectedFile || uploadMutation.isPending}
+            className="w-full bg-emerald-600 hover:bg-emerald-700"
+          >
+            {uploadMutation.isPending ? "Uploading..." : "Upload File"}
+          </Button>
+
+          {uploadResult && (
+            <Alert variant="success" title="Upload complete">
+              <p>Document #{uploadResult.id} saved. Status: <strong>{uploadResult.status}</strong></p>
+              <div className="mt-3">
+                <Label htmlFor="next-action" className="text-sm">What&apos;s next?</Label>
+                <select
+                  id="next-action"
+                  value={selectedAction}
+                  onChange={(e) => handleActionSelect(e.target.value)}
+                  className="mt-1 w-full rounded-lg border border-emerald-200 bg-white px-3 py-2 text-sm"
+                >
+                  {NAV_ACTIONS.map((a) => (
+                    <option key={a.value} value={a.value}>{a.label}</option>
+                  ))}
+                </select>
+              </div>
+            </Alert>
+          )}
+        </div>
       </div>
     </div>
   );

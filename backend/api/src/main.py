@@ -57,13 +57,19 @@ app = FastAPI(title=settings.app_name, version="0.2.0")
 
 # CORS Configuration
 from fastapi.middleware.cors import CORSMiddleware
+
+# Build allowed origins list (no wildcards when using credentials)
+_cors_origins = [
+    "http://localhost:3000",  # Next.js dev
+    "http://127.0.0.1:3000",  # Alternative localhost
+    "https://app.hissabi.com",  # Production frontend
+]
+if hasattr(settings, 'frontend_url') and settings.frontend_url and settings.frontend_url != "*":
+    _cors_origins.append(settings.frontend_url)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",  # Next.js dev
-        "https://app.hissabi.com",  # Production frontend
-        settings.frontend_url if hasattr(settings, 'frontend_url') else "*",
-    ],
+    allow_origins=_cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

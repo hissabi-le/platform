@@ -19,6 +19,10 @@ _COMMON_MAP = {
     "debit": "Debit", "credit": "Credit",
     "amount": "Amount", "total": "Amount", "value": "Amount", "price": "Price", "cost": "Cost",
     "date": "Date", "posting date": "Date", "ts": "Date", "datetime": "Date",
+    # Payment status detection for AR/AP
+    "paid": "PaymentStatus", "status": "PaymentStatus", "payment status": "PaymentStatus",
+    "payment": "PaymentStatus", "settled": "PaymentStatus", "outstanding": "PaymentStatus",
+    "due": "PaymentStatus", "payable": "PaymentStatus", "receivable": "PaymentStatus",
 }
 
 _SECTION_WORDS = {"assets", "liabilities", "equity", "income", "expenses", "revenue", "p&l"}
@@ -35,6 +39,47 @@ def _normalize_text(s: str) -> str:
     s = s.replace(",", "")
     s = s.replace("LBP", "").replace("ل.ل", "")
     return s
+
+
+def parse_payment_status(value) -> str:
+    """
+    Parse payment status from various column values.
+    Returns 'paid' or 'unpaid'. Default is 'paid' if unclear.
+    
+    Recognizes:
+    - English: paid, unpaid, yes, no, outstanding, settled, due
+    - French: payé, impayé, oui, non
+    - Arabic: مدفوع, غير مدفوع
+    """
+    if pd.isna(value) or value is None:
+        return "paid"  # Default: assume paid
+    
+    val = str(value).strip().lower()
+    
+    # Explicit unpaid indicators
+    unpaid_patterns = [
+        "unpaid", "not paid", "outstanding", "due", "pending", "owed",
+        "impayé", "non payé", "non", "false", "0", "no",
+        "غير مدفوع", "مستحق",
+    ]
+    
+    for pattern in unpaid_patterns:
+        if pattern in val:
+            return "unpaid"
+    
+    # Explicit paid indicators (after checking unpaid to avoid "not paid" matching "paid")
+    paid_patterns = [
+        "paid", "settled", "received", "cleared", "complete",
+        "payé", "oui", "yes", "true", "1",
+        "مدفوع", "تم الدفع",
+    ]
+    
+    for pattern in paid_patterns:
+        if pattern in val:
+            return "paid"
+    
+    # Default: assume paid
+    return "paid"
 
 
 def convert_to_numeric(series: pd.Series) -> pd.Series:

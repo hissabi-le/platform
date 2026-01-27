@@ -43,3 +43,13 @@ async def update_org_settings(
     await session.commit()
     await session.refresh(settings)
     return OrganisationSettingsRead.model_validate(settings, from_attributes=True)
+
+
+@router.get("/features")
+async def get_feature_flags() -> dict:
+    """Public endpoint returning feature flags - no auth required."""
+    from ..config import settings as app_settings
+    return {
+        "inventory_enabled": app_settings.feature_inventory_enabled,
+        "recipes_enabled": app_settings.feature_recipes_enabled,
+    }

@@ -186,6 +186,9 @@ class TransactionBase(BaseModel):
     currency: CurrencyCode = "LBP"
     description: Optional[MedStr] = None
     metadata: Optional[dict[str, Any]] = None
+    # AR/AP tracking
+    payment_status: Literal["paid", "unpaid"] = "paid"
+    payment_date: Optional[datetime] = None
 
 
 class TransactionCreate(TransactionBase):
@@ -391,6 +394,9 @@ class JournalEntryBase(BaseModel):
     ambiguous: bool = False
     clarification_question: Optional[LongStr] = None
     resolved: bool = True
+    # AR/AP tracking
+    payment_status: Literal["paid", "unpaid"] = "paid"
+    payment_date: Optional[datetime] = None
 
 
 class JournalEntryCreate(JournalEntryBase):

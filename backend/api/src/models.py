@@ -165,6 +165,13 @@ class Transaction(Base):
                                            default=dict,
                                            nullable=False,
                                        )
+    # AR/AP tracking: default to "paid" (settled)
+    payment_status: Mapped[str]       = mapped_column(
+                                           String(20), nullable=False, default="paid"
+                                       )  # "paid" | "unpaid"
+    payment_date:  Mapped[Optional[datetime]] = mapped_column(
+                                           DateTime(timezone=True), nullable=True
+                                       )  # When marked as paid (null if unpaid or paid at creation)
 
     organisation:  Mapped["Organisation"] = relationship("Organisation", back_populates="transactions")
     upload:        Mapped["Upload"]       = relationship("Upload",       back_populates="transactions")
@@ -366,6 +373,9 @@ class JournalEntry(Base):
     ambiguous: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     clarification_question: Mapped[Optional[str]] = mapped_column(Text)
     resolved: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    # AR/AP tracking: default to "paid" (settled)
+    payment_status: Mapped[str] = mapped_column(String(20), nullable=False, default="paid")  # "paid" | "unpaid"
+    payment_date: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)  # When marked as paid
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     org: Mapped["Organisation"] = relationship("Organisation")

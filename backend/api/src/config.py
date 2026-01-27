@@ -23,7 +23,7 @@ class Settings(BaseSettings):
     database_url: str = Field(alias="DATABASE_URL")
     read_database_url: str | None = Field(default=None, alias="READ_DATABASE_URL")
 
-    redis_url: str = Field(default="redis://localhost:6379/0", alias="REDIS_URL")
+    redis_url: str = Field(default="", alias="REDIS_URL")  # Empty = use local cache
 
     openai_api_key: str | None = Field(default=None, alias="OPENAI_API_KEY")
 

@@ -72,6 +72,9 @@ class Settings(BaseSettings):
     clamav_host: str | None = Field(default=None, alias="CLAMAV_HOST")
     clamav_port: int = Field(default=3310, alias="CLAMAV_PORT")
 
+    feature_inventory_enabled: bool = Field(default=False, alias="FEATURE_INVENTORY_ENABLED")
+    feature_recipes_enabled: bool = Field(default=False, alias="FEATURE_RECIPES_ENABLED")
+
     @field_validator("allowed_mime_types", "cors_origins", mode="before")
     @classmethod
     def _split_csv(cls, value: Sequence[str] | str) -> List[str]:

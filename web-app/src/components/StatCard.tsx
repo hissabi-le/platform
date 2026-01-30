@@ -11,24 +11,24 @@ interface StatCardProps {
 export function StatCard({
     title,
     value,
-    accent = "bg-slate-500",
+    accent = "bg-muted-foreground",
     subtitle,
     trend,
     trendValue
 }: StatCardProps) {
     return (
-        <div className="rounded-xl border bg-white p-5 shadow-sm hover:shadow-lg hover:-translate-y-0.5 transition-all duration-300">
-            <div className="flex items-center justify-between text-sm text-slate-500">
+        <div className="rounded-xl border border-border bg-card text-card-foreground p-5 shadow-sm hover:shadow-lg hover:-translate-y-0.5 transition-all duration-300">
+            <div className="flex items-center justify-between text-sm text-muted-foreground">
                 <span className="font-medium">{title}</span>
                 <span className={`h-2.5 w-2.5 rounded-full ${accent}`} aria-hidden="true" />
             </div>
-            <div className="mt-3 text-2xl font-bold text-slate-900">{value}</div>
+            <div className="mt-3 text-2xl font-bold text-foreground">{value}</div>
             {(subtitle || (trend && trendValue)) && (
                 <div className="mt-2 flex items-center gap-2">
                     {trend && trendValue && (
-                        <span className={`inline-flex items-center text-xs font-medium ${trend === "up" ? "text-emerald-600" :
-                                trend === "down" ? "text-rose-600" :
-                                    "text-slate-500"
+                        <span className={`inline-flex items-center text-xs font-medium ${trend === "up" ? "text-emerald-500" :
+                            trend === "down" ? "text-red-500" :
+                                "text-muted-foreground"
                             }`}>
                             {trend === "up" && (
                                 <svg className="w-3 h-3 mr-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -43,7 +43,7 @@ export function StatCard({
                             {trendValue}
                         </span>
                     )}
-                    {subtitle && <span className="text-xs text-slate-500">{subtitle}</span>}
+                    {subtitle && <span className="text-xs text-muted-foreground">{subtitle}</span>}
                 </div>
             )}
         </div>

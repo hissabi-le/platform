@@ -8,15 +8,17 @@ from sqlalchemy import event, text
 from sqlalchemy.engine import URL, make_url
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import declarative_base
-from sqlalchemy.pool import StaticPool
+from sqlalchemy.pool import StaticPool, NullPool
 
 from .config import settings
+
+# ... (omitted)
 
 # ------------------------------------------------------------------
 # Configuration
 # ------------------------------------------------------------------
 DATABASE_URL = settings.database_url
-READ_DATABASE_URL = settings.read_database_url  # optional read replica
+READ_DATABASE_URL = settings.read_database_url
 
 DB_POOL_SIZE = settings.db_pool_size
 DB_MAX_OVERFLOW = settings.db_max_overflow
@@ -47,13 +49,11 @@ def _create_engine(url: str):
             }
         )
     else:
+        # Use NullPool to prevent connection sharing issues across Gunicorn workers
         kwargs.update(
             {
                 "pool_pre_ping": True,
-                "pool_size": DB_POOL_SIZE,
-                "max_overflow": DB_MAX_OVERFLOW,
-                "pool_recycle": DB_POOL_RECYCLE,
-                "pool_timeout": DB_POOL_TIMEOUT,
+                "poolclass": NullPool,
             }
         )
 
@@ -85,7 +85,7 @@ if settings.database_url.startswith("sqlite+aiosqlite:///:memory:"):
 # ------------------------------------------------------------------
 # Connection tuning per dialect
 # ------------------------------------------------------------------
-@event.listens_for(engine.sync_engine, "connect")
+# @event.listens_for(engine.sync_engine, "connect")
 def _on_connect(dbapi_conn, _):  # pragma: no cover (integration behavior)
     try:
         cur = dbapi_conn.cursor()
@@ -113,10 +113,10 @@ def _on_connect(dbapi_conn, _):  # pragma: no cover (integration behavior)
         pass
 
 # Apply same tuning for read engine if distinct
-if read_engine is not engine:
-    @event.listens_for(read_engine.sync_engine, "connect")
-    def _on_connect_read(dbapi_conn, _):  # pragma: no cover
-        _on_connect(dbapi_conn, _)
+# if read_engine is not engine:
+#     @event.listens_for(read_engine.sync_engine, "connect")
+#     def _on_connect_read(dbapi_conn, _):  # pragma: no cover
+#         _on_connect(dbapi_conn, _)
 
 # ------------------------------------------------------------------
 # FastAPI dependencies

@@ -16,9 +16,9 @@ const features = [
     desc: "Automatic Balance Sheet, P&L, and cash flow; export-ready PDFs for your records.",
   },
   {
-    icon: "📦",
-    title: "Inventory Tracking",
-    desc: "Track stock from documents—e.g., 10kg chicken, 3 dozen eggs—with consistent units and costs.",
+    icon: "💬",
+    title: "Instant Answers",
+    desc: "Ask questions like 'How much did we spend on marketing?' and get instant, accurate answers from your data.",
   },
   {
     icon: "📈",
@@ -254,8 +254,8 @@ export default function HomePage() {
               <div
                 key={p.name}
                 className={`rounded-2xl border p-8 ${p.featured
-                    ? 'bg-slate-900 text-white border-slate-900 shadow-2xl shadow-slate-900/30 scale-105'
-                    : 'bg-white'
+                  ? 'bg-slate-900 text-white border-slate-900 shadow-2xl shadow-slate-900/30 scale-105'
+                  : 'bg-white'
                   }`}
               >
                 {p.featured && (
@@ -272,8 +272,8 @@ export default function HomePage() {
                 <Link
                   href="/login"
                   className={`mt-8 block w-full rounded-xl px-4 py-3 text-center font-medium transition-all ${p.featured
-                      ? 'bg-white text-slate-900 hover:bg-slate-100'
-                      : 'bg-slate-900 text-white hover:bg-slate-800'
+                    ? 'bg-white text-slate-900 hover:bg-slate-100'
+                    : 'bg-slate-900 text-white hover:bg-slate-800'
                     }`}
                 >
                   Get started

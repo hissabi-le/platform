@@ -28,6 +28,59 @@ export default function DocumentsPage() {
     onSettled: () => setDownloading(null),
   });
 
+
+  // Report generation state
+  const [reportType, setReportType] = useState<"pnl" | "balance_sheet" | "cash_flow">("pnl");
+  const [reportRange, setReportRange] = useState<"1m" | "3m" | "6m" | "1y" | "all">("3m");
+
+
+  const generateMutation = useMutation({
+    mutationFn: async () => {
+      const token = localStorage.getItem("hissabi_token");
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/analytics/generate?doc_type=${reportType}&range=${reportRange}`, {
+        method: "POST",
+        headers: {
+          ...(token ? { "Authorization": `Bearer ${token}` } : {}),
+        },
+      });
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.detail || "Failed to generate report");
+      }
+
+      // Get the blob and filename
+      const blob = await response.blob();
+      const contentDisposition = response.headers.get("Content-Disposition");
+      let filename = `${reportType}_report.xlsx`;
+      if (contentDisposition) {
+        const match = contentDisposition.match(/filename=(.+)/);
+        if (match && match[1]) filename = match[1];
+      }
+
+      return { blob, filename };
+    },
+    onSuccess: ({ blob, filename }) => {
+      // Create download link
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+
+      toast.success("Report downloaded successfully!");
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || "Failed to generate report. Please try again.");
+    },
+  });
+
+  const handleGenerateReport = () => {
+    generateMutation.mutate();
+  };
+
   const handleDownload = async (doc: DocumentListItem) => {
     try {
       const full = (await downloadMutation.mutateAsync(doc.id)) as DocumentWithLink;
@@ -48,6 +101,7 @@ export default function DocumentsPage() {
     return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
   };
 
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -57,6 +111,71 @@ export default function DocumentsPage() {
           Browse all balance sheets, P&L reports, and exports generated for your organisation
         </p>
       </header>
+
+      {/* Generate Report Section */}
+      <div className="rounded-xl border bg-gradient-to-br from-emerald-50 to-teal-50 p-6">
+        <div className="flex items-center gap-3 mb-4">
+          <div className="w-10 h-10 rounded-lg bg-emerald-100 flex items-center justify-center">
+            <svg className="w-5 h-5 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+          </div>
+          <div>
+            <h3 className="font-semibold text-slate-900">Generate Financial Report</h3>
+            <p className="text-sm text-slate-600">Create professional financial statements from your data</p>
+          </div>
+        </div>
+
+        <div className="grid md:grid-cols-3 gap-4 mb-4">
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1.5">Report Type</label>
+            <select
+              value={reportType}
+              onChange={(e) => setReportType(e.target.value as typeof reportType)}
+              className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            >
+              <option value="pnl">Profit & Loss Statement</option>
+              <option value="balance_sheet">Balance Sheet</option>
+              <option value="cash_flow">Cash Flow Statement</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1.5">Time Period</label>
+            <select
+              value={reportRange}
+              onChange={(e) => setReportRange(e.target.value as typeof reportRange)}
+              className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            >
+              <option value="1m">Last 30 Days</option>
+              <option value="3m">Last 3 Months</option>
+              <option value="6m">Last 6 Months</option>
+              <option value="1y">Last Year</option>
+              <option value="all">All Time</option>
+            </select>
+          </div>
+
+          <div className="flex items-end">
+            <Button
+              onClick={handleGenerateReport}
+              disabled={generateMutation.isPending}
+              className="w-full bg-emerald-600 hover:bg-emerald-700"
+            >
+              {generateMutation.isPending ? (
+                <>
+                  <svg className="animate-spin -ml-1 mr-2 h-4 w-4" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                  </svg>
+                  Generating...
+                </>
+              ) : (
+                "Generate Report"
+              )}
+            </Button>
+          </div>
+        </div>
+      </div>
 
       {/* Error State */}
       {documentsQuery.error && (

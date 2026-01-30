@@ -268,3 +268,119 @@ def compute_roi(pnl: Mapping[str, float]) -> dict:
         "total_investment": investment,
         "roi": roi_value,
     }
+
+
+# Cash Flow classification keywords
+OPERATING_KEYS = {
+    "sales", "revenue", "income", "receipt", "service", "customer",
+    "rent", "salary", "salaries", "wage", "utilities", "supplies", "marketing",
+    "insurance", "maintenance", "professional", "tax", "interest", "expense",
+    "operating", "payroll", "vendor", "supplier"
+}
+INVESTING_KEYS = {
+    "equipment", "asset", "property", "vehicle", "purchase", "acquisition",
+    "sale of asset", "investment", "stock purchase", "capital expenditure"
+}
+FINANCING_KEYS = {
+    "loan", "debt", "borrow", "repayment", "principal", "dividend",
+    "owner's draw", "owner's investment", "capital contribution", "equity"
+}
+
+
+def generate_cash_flow(data: Iterable[Mapping]) -> dict:
+    """
+    Generate a Cash Flow Statement from transaction data.
+    
+    Categorizes transactions into:
+    - Operating Activities: Day-to-day business operations
+    - Investing Activities: Purchase/sale of long-term assets
+    - Financing Activities: Loans, equity, owner transactions
+    
+    Uses the indirect method starting from net income adjustments.
+    """
+    operating_inflows = 0.0
+    operating_outflows = 0.0
+    investing_inflows = 0.0
+    investing_outflows = 0.0
+    financing_inflows = 0.0
+    financing_outflows = 0.0
+    
+    operating_details: dict[str, float] = {}
+    investing_details: dict[str, float] = {}
+    financing_details: dict[str, float] = {}
+
+    for row in _iter_rows(data):
+        name = _get_ci(row, "Account", "account", "Category", "category", "Description", "description", default="")
+        name = str(name).strip()
+        if not name:
+            continue
+
+        amount = _get_ci(row, "Amount", "amount", default=None)
+        if amount is None or _is_nan(amount):
+            continue
+        try:
+            amount_val = float(amount)
+        except Exception:
+            continue
+        if abs(amount_val) < 1e-9:
+            continue
+
+        name_lower = name.lower()
+        
+        # Classify by cash flow activity
+        def _match(keys: set[str]) -> bool:
+            return any(key in name_lower for key in keys)
+        
+        if _match(FINANCING_KEYS):
+            if amount_val >= 0:
+                financing_inflows += amount_val
+            else:
+                financing_outflows += abs(amount_val)
+            financing_details[name] = financing_details.get(name, 0.0) + amount_val
+        elif _match(INVESTING_KEYS):
+            if amount_val >= 0:
+                investing_inflows += amount_val
+            else:
+                investing_outflows += abs(amount_val)
+            investing_details[name] = investing_details.get(name, 0.0) + amount_val
+        else:
+            # Default to operating activities
+            if amount_val >= 0:
+                operating_inflows += amount_val
+            else:
+                operating_outflows += abs(amount_val)
+            operating_details[name] = operating_details.get(name, 0.0) + amount_val
+
+    net_operating = operating_inflows - operating_outflows
+    net_investing = investing_inflows - investing_outflows
+    net_financing = financing_inflows - financing_outflows
+    net_change_in_cash = net_operating + net_investing + net_financing
+
+    return {
+        "operating_activities": {
+            "inflows": operating_inflows,
+            "outflows": operating_outflows,
+            "net": net_operating,
+            "details": operating_details,
+        },
+        "investing_activities": {
+            "inflows": investing_inflows,
+            "outflows": investing_outflows,
+            "net": net_investing,
+            "details": investing_details,
+        },
+        "financing_activities": {
+            "inflows": financing_inflows,
+            "outflows": financing_outflows,
+            "net": net_financing,
+            "details": financing_details,
+        },
+        "net_change_in_cash": net_change_in_cash,
+        "summary": {
+            "operating": net_operating,
+            "investing": net_investing,
+            "financing": net_financing,
+            "total": net_change_in_cash,
+        }
+    }
+

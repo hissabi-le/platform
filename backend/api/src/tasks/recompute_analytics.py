@@ -43,13 +43,13 @@ async def _recompute(org_id: int) -> None:
             pnl = generate_pnl(rows)
             expenses_total = pnl["cogs"] + pnl["total_expenses"]
 
-            series_map: dict[tuple[int, int], dict[str, float | str]] = {}
+            series_map: dict[tuple[int, int, int], dict[str, float | str]] = {}
             for t in tx:
-                key = (t.txn_date.year, t.txn_date.month)
+                key = (t.txn_date.year, t.txn_date.month, t.txn_date.day)
                 entry = series_map.setdefault(
                     key,
                     {
-                        "date": datetime(t.txn_date.year, t.txn_date.month, 1).date().isoformat(),
+                        "date": t.txn_date.isoformat(),
                         "revenue": 0.0,
                         "expenses": 0.0,
                     },

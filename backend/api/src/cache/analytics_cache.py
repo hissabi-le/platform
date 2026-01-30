@@ -62,5 +62,16 @@ class AnalyticsCache:
         async with self._local_lock:
             self._local.clear()
 
+    async def clear_org(self, org_id: int) -> None:
+        """Clear all cached analytics for a specific organization."""
+        ranges = ["1m", "3m", "6m", "1y"]
+        client = await self._client()
+        for range_key in ranges:
+            key = self._key(org_id, range_key)
+            if client:
+                await client.delete(key)
+            async with self._local_lock:
+                self._local.pop(key, None)
+
 
 analytics_cache = AnalyticsCache()

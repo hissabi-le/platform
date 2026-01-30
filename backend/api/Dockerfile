@@ -33,7 +33,11 @@ RUN pip install --no-cache-dir \
     httpx==0.23.3 \
     pytest-asyncio\
     openpyxl \
-    aiosqlite
+    aiosqlite \
+    gunicorn \
+    email-validator \
+    pyjwt \
+    python-multipart
 
 # copy source + alembic scripts if need migrations at runtime
 COPY src       src

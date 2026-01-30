@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..assistant import OpenAIClient
+from ..cache.analytics_cache import analytics_cache
 from ..database import get_db
 from ..models import JournalDay
 from ..repositories.journal import JournalRepo
@@ -113,7 +114,10 @@ async def save_journal_day(
     commit = payload.commit if payload.commit is not None else True
 
     if not entries:
-        raise HTTPException(status_code=400, detail="no journal lines detected")
+        raise HTTPException(
+            status_code=400,
+            detail="Could not parse any journal entries. Please enter text like 'sold 5 coffees for $25' or 'paid rent $400'."
+        )
 
     if not commit:
         revenue, cost, net, cumulative, roi = await journal_repo.preview_totals(
@@ -167,6 +171,9 @@ async def save_journal_day(
     for entry in stored_entries:
         await session.refresh(entry)
     await session.commit()
+    
+    # Invalidate analytics cache so fresh data is fetched
+    await analytics_cache.clear_org(auth.user.org_id)
 
     stored_dicts = [
         {
@@ -354,6 +361,7 @@ async def resolve_journal_day(
         language=day.language or "en",
         hash_key=hash_key,
         entries=entry_payload,
+        append=False,  # Resolve replaces, not appends
     )
     await session.flush()
     await session.refresh(day)

@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { format, parseISO } from "date-fns";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -49,6 +49,7 @@ const todayIso = getUTCDateString();
 
 export default function AppDashboard() {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const [range, setRange] = useState<RangeOption>("3m");
   const [journalText, setJournalText] = useState("");
   const [journalDate, setJournalDate] = useState(todayIso);
@@ -78,7 +79,11 @@ export default function AppDashboard() {
     onSuccess: (data) => {
       setJournalResult(data);
       setJournalText("");
-      toast.success("Journal saved. Totals refreshed.");
+      // Invalidate analytics queries so dashboard updates with new data
+      queryClient.invalidateQueries({ queryKey: ["analytics-pnl"] });
+      queryClient.invalidateQueries({ queryKey: ["analytics-receivables"] });
+      queryClient.invalidateQueries({ queryKey: ["analytics-payables"] });
+      toast.success("Journal saved. Analytics refreshed.");
     },
     onError: (error) => {
       toast.error(error instanceof Error ? error.message : "Unable to save journal entry.");
@@ -145,18 +150,18 @@ export default function AppDashboard() {
       {/* Header */}
       <header className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold text-slate-900">Dashboard</h1>
-          <p className="text-sm text-slate-500 mt-1">
+          <h1 className="text-2xl font-semibold text-foreground">Dashboard</h1>
+          <p className="text-sm text-muted-foreground mt-1">
             Track revenue, expenses, and daily activity at a glance
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Label htmlFor="range" className="text-sm text-slate-600">Period:</Label>
+          <Label htmlFor="range" className="text-sm text-muted-foreground">Period:</Label>
           <select
             id="range"
             value={range}
             onChange={(e) => setRange(e.target.value as RangeOption)}
-            className="rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-slate-900"
+            className="rounded-lg border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
           >
             {RANGE_OPTIONS.map((opt) => (
               <option key={opt} value={opt}>{RANGE_LABELS[opt]}</option>
@@ -186,8 +191,8 @@ export default function AppDashboard() {
           {/* KPI Cards */}
           <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <StatCard title="Revenue" value={formatCurrency(pnlQuery.data.revenue)} accent="bg-emerald-500" />
-            <StatCard title="Expenses" value={formatCurrency(pnlQuery.data.expenses)} accent="bg-rose-500" />
-            <StatCard title="Net Profit" value={formatCurrency(pnlQuery.data.profit)} accent="bg-slate-900" />
+            <StatCard title="Expenses" value={formatCurrency(pnlQuery.data.expenses)} accent="bg-red-500" />
+            <StatCard title="Net Profit" value={formatCurrency(pnlQuery.data.profit)} accent="bg-primary" />
             <StatCard title="Margin" value={formatPercent(margin)} accent="bg-amber-500" />
           </section>
 
@@ -195,52 +200,52 @@ export default function AppDashboard() {
           <section className="grid gap-4 sm:grid-cols-2">
             <Link
               href="/app/receivables"
-              className="rounded-xl border bg-white p-6 shadow-sm hover:border-blue-300 hover:shadow-md transition-all cursor-pointer block"
+              className="rounded-xl border bg-card text-card-foreground p-6 shadow-sm hover:border-blue-400 hover:shadow-md transition-all cursor-pointer block"
             >
               <div className="flex items-center justify-between mb-4">
-                <h3 className="font-semibold text-slate-900">Accounts Receivable</h3>
-                <span className="text-xs text-slate-500">Money owed to you →</span>
+                <h3 className="font-semibold text-foreground">Accounts Receivable</h3>
+                <span className="text-xs text-muted-foreground">Money owed to you →</span>
               </div>
               <div className="flex items-end gap-2">
-                <span className="text-3xl font-bold text-blue-600">
+                <span className="text-3xl font-bold text-blue-500">
                   {formatCurrency(receivablesQuery.data?.total ?? 0)}
                 </span>
                 {(receivablesQuery.data?.count ?? 0) > 0 && (
-                  <span className="text-sm text-slate-500 mb-1">
+                  <span className="text-sm text-muted-foreground mb-1">
                     ({receivablesQuery.data?.count} unpaid)
                   </span>
                 )}
               </div>
               {receivablesQuery.data?.breakdown?.slice(0, 3).map((row) => (
                 <div key={row.category} className="mt-2 flex justify-between text-sm">
-                  <span className="text-slate-600">{row.category}</span>
-                  <span className="font-medium text-slate-900">{formatCurrency(row.amount)}</span>
+                  <span className="text-muted-foreground">{row.category}</span>
+                  <span className="font-medium text-foreground">{formatCurrency(row.amount)}</span>
                 </div>
               ))}
             </Link>
 
             <Link
               href="/app/receivables"
-              className="rounded-xl border bg-white p-6 shadow-sm hover:border-orange-300 hover:shadow-md transition-all cursor-pointer block"
+              className="rounded-xl border bg-card text-card-foreground p-6 shadow-sm hover:border-orange-400 hover:shadow-md transition-all cursor-pointer block"
             >
               <div className="flex items-center justify-between mb-4">
-                <h3 className="font-semibold text-slate-900">Accounts Payable</h3>
-                <span className="text-xs text-slate-500">Money you owe →</span>
+                <h3 className="font-semibold text-foreground">Accounts Payable</h3>
+                <span className="text-xs text-muted-foreground">Money you owe →</span>
               </div>
               <div className="flex items-end gap-2">
-                <span className="text-3xl font-bold text-orange-600">
+                <span className="text-3xl font-bold text-orange-500">
                   {formatCurrency(payablesQuery.data?.total ?? 0)}
                 </span>
                 {(payablesQuery.data?.count ?? 0) > 0 && (
-                  <span className="text-sm text-slate-500 mb-1">
+                  <span className="text-sm text-muted-foreground mb-1">
                     ({payablesQuery.data?.count} unpaid)
                   </span>
                 )}
               </div>
               {payablesQuery.data?.breakdown?.slice(0, 3).map((row) => (
                 <div key={row.category} className="mt-2 flex justify-between text-sm">
-                  <span className="text-slate-600">{row.category}</span>
-                  <span className="font-medium text-slate-900">{formatCurrency(row.amount)}</span>
+                  <span className="text-muted-foreground">{row.category}</span>
+                  <span className="font-medium text-foreground">{formatCurrency(row.amount)}</span>
                 </div>
               ))}
             </Link>
@@ -249,10 +254,10 @@ export default function AppDashboard() {
           {/* Charts Row */}
           <div className="grid gap-6 lg:grid-cols-2">
             {/* Revenue vs Expenses Chart */}
-            <div className="rounded-xl border bg-white p-6 shadow-sm">
-              <h3 className="font-semibold text-slate-900 mb-4">Revenue vs Expenses</h3>
+            <div className="rounded-xl border bg-card text-card-foreground p-6 shadow-sm">
+              <h3 className="font-semibold text-foreground mb-4">Revenue vs Expenses</h3>
               {formattedSeries.length === 0 ? (
-                <div className="flex items-center justify-center h-48 text-slate-500">
+                <div className="flex items-center justify-center h-48 text-muted-foreground">
                   <p className="text-sm">Upload data to see trends</p>
                 </div>
               ) : (
@@ -264,26 +269,29 @@ export default function AppDashboard() {
                         <stop offset="95%" stopColor="#10b981" stopOpacity={0.05} />
                       </linearGradient>
                       <linearGradient id="expGrad" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#f43f5e" stopOpacity={0.8} />
-                        <stop offset="95%" stopColor="#f43f5e" stopOpacity={0.05} />
+                        <stop offset="5%" stopColor="#ef4444" stopOpacity={0.8} />
+                        <stop offset="95%" stopColor="#ef4444" stopOpacity={0.05} />
                       </linearGradient>
                     </defs>
                     <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                     <XAxis dataKey="label" tick={{ fontSize: 11, fill: "#64748b" }} tickLine={false} />
                     <YAxis tick={{ fontSize: 11, fill: "#64748b" }} tickLine={false} tickFormatter={(v) => `$${v}`} />
-                    <Tooltip formatter={(v) => [formatCurrency(Number(v))]} />
+                    <Tooltip
+                      contentStyle={{ backgroundColor: 'var(--card)', borderColor: 'var(--border)', color: 'var(--foreground)' }}
+                      formatter={(v) => [formatCurrency(Number(v))]}
+                    />
                     <Area type="monotone" dataKey="revenue" stroke="#10b981" fill="url(#revGrad)" />
-                    <Area type="monotone" dataKey="expenses" stroke="#f43f5e" fill="url(#expGrad)" />
+                    <Area type="monotone" dataKey="expenses" stroke="#ef4444" fill="url(#expGrad)" />
                   </AreaChart>
                 </ResponsiveContainer>
               )}
             </div>
 
             {/* Net Profit Chart */}
-            <div className="rounded-xl border bg-white p-6 shadow-sm">
-              <h3 className="font-semibold text-slate-900 mb-4">Net Profit by Period</h3>
+            <div className="rounded-xl border bg-card text-card-foreground p-6 shadow-sm">
+              <h3 className="font-semibold text-foreground mb-4">Net Profit by Period</h3>
               {formattedSeries.length === 0 ? (
-                <div className="flex items-center justify-center h-48 text-slate-500">
+                <div className="flex items-center justify-center h-48 text-muted-foreground">
                   <p className="text-sm">No data available</p>
                 </div>
               ) : (
@@ -292,7 +300,10 @@ export default function AppDashboard() {
                     <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                     <XAxis dataKey="label" tick={{ fontSize: 11, fill: "#64748b" }} tickLine={false} />
                     <YAxis tick={{ fontSize: 11, fill: "#64748b" }} tickLine={false} tickFormatter={(v) => `$${v}`} />
-                    <Tooltip formatter={(v) => [formatCurrency(Number(v)), "Profit"]} />
+                    <Tooltip
+                      contentStyle={{ backgroundColor: 'var(--card)', borderColor: 'var(--border)', color: 'var(--foreground)' }}
+                      formatter={(v) => [formatCurrency(Number(v)), "Profit"]}
+                    />
                     <Bar dataKey="profit" fill="#0f172a" radius={[4, 4, 0, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
@@ -305,10 +316,10 @@ export default function AppDashboard() {
       {/* Action Cards */}
       <div className="grid gap-6 lg:grid-cols-2">
         {/* Quick Journal Entry */}
-        <div className="rounded-xl border bg-white p-6 shadow-sm space-y-4">
+        <div className="rounded-xl border bg-card text-card-foreground p-6 shadow-sm space-y-4">
           <header>
-            <h2 className="font-semibold text-slate-900">Quick Journal Entry</h2>
-            <p className="text-sm text-slate-500 mt-1">Log today&apos;s activity in seconds</p>
+            <h2 className="font-semibold text-foreground">Quick Journal Entry</h2>
+            <p className="text-sm text-muted-foreground mt-1">Log today&apos;s activity in seconds</p>
           </header>
 
           <div className="space-y-3">
@@ -329,7 +340,7 @@ export default function AppDashboard() {
                 value={journalText}
                 onChange={(e) => setJournalText(e.target.value)}
                 placeholder="sold 5 coffees for $25&#10;bought milk $6"
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-slate-900"
+                className="w-full rounded-lg border border-input bg-background px-3 py-2 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-ring"
               />
             </div>
             <Button
@@ -342,24 +353,24 @@ export default function AppDashboard() {
           </div>
 
           {journalResult?.totals && (
-            <div className="rounded-lg bg-slate-50 p-4 space-y-2">
-              <p className="font-medium text-slate-700 text-sm">Today&apos;s Totals</p>
+            <div className="rounded-lg bg-muted p-4 space-y-2">
+              <p className="font-medium text-foreground text-sm">Today&apos;s Totals</p>
               <div className="grid grid-cols-2 gap-2 text-sm">
                 <div className="flex justify-between">
-                  <span className="text-slate-600">Revenue</span>
-                  <span className="text-emerald-600">{formatCurrency(journalResult.totals.revenue)}</span>
+                  <span className="text-muted-foreground">Revenue</span>
+                  <span className="text-emerald-500">{formatCurrency(journalResult.totals.revenue)}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-slate-600">Cost</span>
-                  <span className="text-rose-600">{formatCurrency(journalResult.totals.cost)}</span>
+                  <span className="text-muted-foreground">Cost</span>
+                  <span className="text-red-500">{formatCurrency(journalResult.totals.cost)}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-slate-600">Net</span>
-                  <span className="font-medium">{formatCurrency(journalResult.totals.net)}</span>
+                  <span className="text-muted-foreground">Net</span>
+                  <span className="font-medium text-foreground">{formatCurrency(journalResult.totals.net)}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-slate-600">ROI</span>
-                  <span>{journalResult.totals.roi != null ? `${journalResult.totals.roi.toFixed(1)}%` : "—"}</span>
+                  <span className="text-muted-foreground">ROI</span>
+                  <span className="text-foreground">{journalResult.totals.roi != null ? `${journalResult.totals.roi.toFixed(1)}%` : "—"}</span>
                 </div>
               </div>
             </div>
@@ -378,10 +389,10 @@ export default function AppDashboard() {
         </div>
 
         {/* Quick Upload */}
-        <div className="rounded-xl border bg-white p-6 shadow-sm space-y-4">
+        <div className="rounded-xl border bg-card text-card-foreground p-6 shadow-sm space-y-4">
           <header>
-            <h2 className="font-semibold text-slate-900">Quick Upload</h2>
-            <p className="text-sm text-slate-500 mt-1">Drop a spreadsheet or statement</p>
+            <h2 className="font-semibold text-foreground">Quick Upload</h2>
+            <p className="text-sm text-muted-foreground mt-1">Drop a spreadsheet or statement</p>
           </header>
 
           <div
@@ -397,7 +408,7 @@ export default function AppDashboard() {
                 setUploadResult(null);
               }
             }}
-            className={`relative flex flex-col items-center justify-center rounded-lg border-2 border-dashed p-8 transition-colors ${dragActive ? "border-emerald-500 bg-emerald-50" : selectedFile ? "border-slate-300 bg-slate-50" : "border-slate-300"
+            className={`relative flex flex-col items-center justify-center rounded-lg border-2 border-dashed p-8 transition-colors ${dragActive ? "border-emerald-500 bg-emerald-50/10" : selectedFile ? "border-input bg-muted" : "border-muted-foreground/25"
               }`}
           >
             {selectedFile ? (
@@ -405,22 +416,22 @@ export default function AppDashboard() {
                 <svg className="w-10 h-10 mx-auto text-emerald-500 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                 </svg>
-                <p className="font-medium text-slate-900">{selectedFile.name}</p>
-                <p className="text-sm text-slate-500">{formatFileSize(selectedFile.size)}</p>
+                <p className="font-medium text-foreground">{selectedFile.name}</p>
+                <p className="text-sm text-muted-foreground">{formatFileSize(selectedFile.size)}</p>
                 <button
                   onClick={() => { setSelectedFile(null); setUploadResult(null); }}
-                  className="mt-2 text-sm text-slate-600 underline hover:text-slate-900"
+                  className="mt-2 text-sm text-muted-foreground underline hover:text-foreground"
                 >
                   Remove
                 </button>
               </div>
             ) : (
               <div className="text-center">
-                <svg className="w-10 h-10 mx-auto text-slate-400 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <svg className="w-10 h-10 mx-auto text-muted-foreground/50 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
                 </svg>
-                <p className="font-medium text-slate-900">Drop files here</p>
-                <p className="text-sm text-slate-500">CSV, Excel, PDF</p>
+                <p className="font-medium text-foreground">Drop files here</p>
+                <p className="text-sm text-muted-foreground">CSV, Excel, PDF</p>
                 <input
                   type="file"
                   accept=".xlsx,.xls,.csv,.pdf"
@@ -440,7 +451,8 @@ export default function AppDashboard() {
           <Button
             onClick={handleUpload}
             disabled={!selectedFile || uploadMutation.isPending}
-            className="w-full bg-emerald-600 hover:bg-emerald-700"
+            className="w-full"
+            variant={!selectedFile ? "outline" : "default"}
           >
             {uploadMutation.isPending ? "Uploading..." : "Upload File"}
           </Button>
@@ -454,7 +466,7 @@ export default function AppDashboard() {
                   id="next-action"
                   value={selectedAction}
                   onChange={(e) => handleActionSelect(e.target.value)}
-                  className="mt-1 w-full rounded-lg border border-emerald-200 bg-white px-3 py-2 text-sm"
+                  className="mt-1 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                 >
                   {NAV_ACTIONS.map((a) => (
                     <option key={a.value} value={a.value}>{a.label}</option>

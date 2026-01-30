@@ -268,6 +268,9 @@ def _infer_category(entry_type: str, item_name: Optional[str], tokens: list[str]
 
 
 def _normalize_entry_payload(entry: dict[str, Any]) -> dict[str, Any]:
+    # Map 'amount' to 'total' since LLM sometimes returns 'amount' instead of 'total'
+    total_value = entry.get("total") or entry.get("amount")
+    
     normalised = {
         "entry_type": entry.get("entry_type"),
         "item_name": entry.get("item_name"),
@@ -283,7 +286,9 @@ def _normalize_entry_payload(entry: dict[str, Any]) -> dict[str, Any]:
         "clarification_question": entry.get("clarification_question"),
         "resolved": entry.get("resolved", True),
     }
-    for key in ("quantity", "unit_cost", "total", "vat_percent"):
+    
+    # Process numeric fields
+    for key in ("quantity", "unit_cost", "vat_percent"):
         value = entry.get(key)
         if value is None:
             continue
@@ -294,6 +299,30 @@ def _normalize_entry_payload(entry: dict[str, Any]) -> dict[str, Any]:
             normalised["ambiguous"] = True
             if not normalised["clarification_question"]:
                 normalised["clarification_question"] = f"unable to parse numeric value for {key}"
+    
+    # Handle total/amount separately - extract number from strings like "25$", "$25", "25.00$"
+    if total_value is not None:
+        try:
+            # Try direct conversion first
+            normalised["total"] = Decimal(str(total_value))
+        except Exception:
+            # Extract numeric portion from strings like "25$" or "$25.00"
+            str_val = str(total_value)
+            match = re.search(r"(-?\d+(?:[,\.]\d+)?)", str_val.replace(",", ""))
+            if match:
+                try:
+                    normalised["total"] = Decimal(match.group(1))
+                except Exception:
+                    normalised["total"] = None
+                    normalised["ambiguous"] = True
+                    if not normalised["clarification_question"]:
+                        normalised["clarification_question"] = "unable to parse total amount"
+            else:
+                normalised["total"] = None
+                normalised["ambiguous"] = True
+                if not normalised["clarification_question"]:
+                    normalised["clarification_question"] = "unable to parse total amount"
+    
     return normalised
 
 
@@ -372,29 +401,8 @@ class OpenAIClient:
         """
         if not self.client:
             return []
-        # 1) Responses API with JSON schema
-        try:
-            resp = self.client.responses.create(
-                model=self.json_model,
-                input=[{"role": "system", "content": system},
-                       {"role": "user", "content": user}],
-                response_format={
-                    "type": "json_schema",
-                    "json_schema": {"name": "hissabi_schema", "schema": schema, "strict": True},
-                },
-                timeout=30,
-            )
-            text = resp.output_text
-            data = json.loads(text)
-            if isinstance(data, dict) and "items" in data:
-                return data["items"] if isinstance(data["items"], list) else [data["items"]]
-            if isinstance(data, list):
-                return data
-            return [data]
-        except Exception as e:
-            log.warning("OpenAI Responses API failed, trying chat.completions JSON: %s", e)
-
-        # 2) Chat Completions with JSON object format (fallback)
+        
+        # Use Chat Completions with JSON object format
         try:
             comp = self.client.chat.completions.create(
                 model=self.model,
@@ -404,14 +412,17 @@ class OpenAIClient:
                 timeout=30,
             )
             text = comp.choices[0].message.content or "{}"
+            log.info(f"OpenAI raw response: {text}")
             data = json.loads(text)
             if isinstance(data, dict) and "items" in data:
                 return data["items"] if isinstance(data["items"], list) else [data["items"]]
             if isinstance(data, list):
                 return data
+            # If the schema expected a root object with "entries" (for journal), return that wrapper or list
+            # The calling function (parse_journal_lines) expects a dict with "entries" or a list.
             return [data]
         except Exception as e:
-            log.error("OpenAI ChatCompletions fallback also failed: %s", e)
+            log.error("OpenAI ChatCompletions failed: %s", e)
             return []
 
     # ------------------- inventory mapping -------------------
@@ -599,11 +610,16 @@ class OpenAIClient:
                         )
                     normalised = _normalize_entry_payload(entry)
                     final_entries.append(normalised)
-                language_value = llm_entries[0].get("language") if isinstance(llm_entries[0], dict) else detected_language
-                return {
-                    "entries": final_entries,
-                    "language": language_value or detected_language,
-                }
+                
+                # Check if we actually got entries; if not, fallback to heuristic
+                if final_entries:
+                    language_value = llm_entries[0].get("language") if isinstance(llm_entries[0], dict) else detected_language
+                    return {
+                        "entries": final_entries,
+                        "language": language_value or detected_language,
+                    }
+                else:
+                    log.warning("OpenAI returned no entries, falling back to heuristic")
 
         return _heuristic_parse(entries_list, detected_language)
 

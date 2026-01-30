@@ -135,6 +135,10 @@ class JournalRepo:
         await self.delete_entries(session, day.id)
         stored: list[JournalEntry] = []
         for payload in entries:
+            # Ensure total has a value to prevent NOT NULL constraint violation
+            total_value = payload.get("total")
+            if total_value is None:
+                total_value = Decimal("0")
             entry = JournalEntry(
                 org_id=org_id,
                 journal_day_id=day.id,
@@ -143,7 +147,44 @@ class JournalRepo:
                 quantity=payload.get("quantity"),
                 unit=payload.get("unit"),
                 unit_cost=payload.get("unit_cost"),
-                total=payload.get("total"),
+                total=total_value,
+                category=payload.get("category"),
+                vat_percent=payload.get("vat_percent"),
+                vat_included=payload.get("vat_included"),
+                notes=payload.get("notes"),
+                ambiguous=payload.get("ambiguous", False),
+                clarification_question=payload.get("clarification_question"),
+                resolved=payload.get("resolved", True),
+            )
+            session.add(entry)
+            stored.append(entry)
+        await session.flush()
+        return stored
+
+    async def append_entries(
+        self,
+        session: AsyncSession,
+        *,
+        day: JournalDay,
+        org_id: int,
+        entries: Sequence[dict],
+    ) -> list[JournalEntry]:
+        """Append new entries to an existing day without deleting existing entries."""
+        stored: list[JournalEntry] = []
+        for payload in entries:
+            # Ensure total has a value to prevent NOT NULL constraint violation
+            total_value = payload.get("total")
+            if total_value is None:
+                total_value = Decimal("0")
+            entry = JournalEntry(
+                org_id=org_id,
+                journal_day_id=day.id,
+                entry_type=payload["entry_type"],
+                item_name=payload.get("item_name"),
+                quantity=payload.get("quantity"),
+                unit=payload.get("unit"),
+                unit_cost=payload.get("unit_cost"),
+                total=total_value,
                 category=payload.get("category"),
                 vat_percent=payload.get("vat_percent"),
                 vat_included=payload.get("vat_included"),
@@ -284,10 +325,13 @@ class JournalRepo:
         language: str,
         hash_key: str,
         entries: Sequence[dict],
+        append: bool = True,  # If True, append entries to existing day; if False, replace all entries
     ) -> tuple[JournalDay, list[JournalEntry], Decimal, Decimal, Decimal, Decimal, Optional[float]]:
         settings = await self.settings_repo.ensure(session, org_id)
         day = await self.get_by_date(session, org_id=org_id, journal_date=journal_date)
+        
         if not day:
+            # New day - create fresh
             day = JournalDay(
                 org_id=org_id,
                 user_id=user_id,
@@ -298,24 +342,63 @@ class JournalRepo:
             )
             session.add(day)
             await session.flush()
+        else:
+            if append:
+                # Existing day - append raw_text with newline separator
+                existing_text = day.raw_text.strip() if day.raw_text else ""
+                new_text = raw_text.strip()
+                if existing_text and new_text:
+                    day.raw_text = f"{existing_text}\n{new_text}"
+                elif new_text:
+                    day.raw_text = new_text
+            else:
+                # Replace mode - overwrite raw_text
+                day.raw_text = raw_text
+            # Update hash for the current text
+            day.hash_key = self.hash_payload(org_id, journal_date, day.raw_text)
+        
         day.user_id = user_id
-        day.raw_text = raw_text
         day.language = language
-        day.hash_key = hash_key
 
-        await self._clear_journal_movements(session, org_id=org_id, day_id=day.id)
-        await self._apply_inventory_movements(
-            session,
-            org_id=org_id,
-            entries=entries,
-            day_id=day.id,
-            persist=True,
-        )
-        stored_entries = await self.replace_entries(session, day=day, org_id=org_id, entries=entries)
+        if append:
+            # Apply inventory movements for new entries only
+            await self._apply_inventory_movements(
+                session,
+                org_id=org_id,
+                entries=entries,
+                day_id=day.id,
+                persist=True,
+            )
+            
+            # Append new entries (don't delete existing ones)
+            new_entries = await self.append_entries(session, day=day, org_id=org_id, entries=entries)
+        else:
+            # Replace mode - clear and recreate
+            await self._clear_journal_movements(session, org_id=org_id, day_id=day.id)
+            await self._apply_inventory_movements(
+                session,
+                org_id=org_id,
+                entries=entries,
+                day_id=day.id,
+                persist=True,
+            )
+            new_entries = await self.replace_entries(session, day=day, org_id=org_id, entries=entries)
+        
+        # Get all entries for the day to compute totals
+        all_entries = await self.list_entries(session, journal_day_id=day.id)
+        all_entries_dicts = [
+            {
+                "entry_type": e.entry_type,
+                "total": e.total,
+                "ambiguous": e.ambiguous,
+                "resolved": e.resolved,
+            }
+            for e in all_entries
+        ]
 
-        revenue_total, cost_total = self._compute_totals(entries)
+        revenue_total, cost_total = self._compute_totals(all_entries_dicts)
         net = (revenue_total - cost_total).quantize(MONEY_QUANT)
-        unresolved = sum(1 for entry in entries if entry.get("ambiguous") or not entry.get("resolved", True))
+        unresolved = sum(1 for e in all_entries if e.ambiguous or not e.resolved)
 
         day.total_revenue = revenue_total
         day.total_cost = cost_total
@@ -329,4 +412,4 @@ class JournalRepo:
         if settings.total_initial_investment and settings.total_initial_investment > 0:
             roi = float((cumulative / settings.total_initial_investment * Decimal("100")).quantize(Decimal("0.01")))
 
-        return day, stored_entries, revenue_total, cost_total, net, cumulative, roi
+        return day, new_entries, revenue_total, cost_total, net, cumulative, roi

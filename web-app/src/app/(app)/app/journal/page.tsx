@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import type { FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -39,7 +39,7 @@ export default function JournalPage() {
   const qc = useQueryClient();
   const [selectedDate, setSelectedDate] = useState<string>(isoToday);
   const [notes, setNotes] = useState<string>("");
-  const [entryMode, setEntryMode] = useState<EntryMode>("freetext");
+  const [entryMode, setEntryMode] = useState<EntryMode>("structured");
   const [structuredEntry, setStructuredEntry] = useState<StructuredEntry>({
     entry_type: "revenue",
     item_name: "",
@@ -49,6 +49,19 @@ export default function JournalPage() {
     total: "",
   });
   const [resolutionDrafts, setResolutionDrafts] = useState<Record<number, ResolutionDraft>>({});
+  const [showBaselineForm, setShowBaselineForm] = useState(false);
+
+  // Auto-calculate total when quantity or unit_cost changes
+  useEffect(() => {
+    const qty = parseFloat(structuredEntry.quantity);
+    const cost = parseFloat(structuredEntry.unit_cost);
+    if (!isNaN(qty) && !isNaN(cost) && structuredEntry.quantity && structuredEntry.unit_cost) {
+      setStructuredEntry(prev => ({
+        ...prev,
+        total: (qty * cost).toFixed(2)
+      }));
+    }
+  }, [structuredEntry.quantity, structuredEntry.unit_cost]);
 
   const settingsQuery = useQuery({
     queryKey: ["settings"],
@@ -76,10 +89,27 @@ export default function JournalPage() {
     onSuccess: (data) => {
       qc.setQueryData(["journal-day", selectedDate], data);
       setNotes("");
+      // Invalidate analytics queries so dashboard updates with new data
+      qc.invalidateQueries({ queryKey: ["analytics-pnl"] });
+      qc.invalidateQueries({ queryKey: ["analytics-receivables"] });
+      qc.invalidateQueries({ queryKey: ["analytics-payables"] });
       toast.success("Journal entry saved");
     },
-    onError: (error) => {
-      toast.error(error instanceof Error ? error.message : "Failed to save journal");
+    onError: (error: unknown) => {
+      // Extract detailed error message from API response
+      let message = "Failed to save journal";
+      if (error && typeof error === "object") {
+        const apiError = error as { details?: { detail?: string | Array<{ msg: string }> } };
+        const detail = apiError.details?.detail;
+        if (typeof detail === "string") {
+          message = detail;
+        } else if (Array.isArray(detail) && detail[0]?.msg) {
+          message = detail.map(e => e.msg).join("; ");
+        } else if (error instanceof Error) {
+          message = error.message;
+        }
+      }
+      toast.error(message);
     },
   });
 
@@ -128,7 +158,6 @@ export default function JournalPage() {
     const initial = form.get("initial") as string;
     const cash = form.get("cash") as string;
     const assets = form.get("assets") as string;
-    const inventoryMode = form.get("inventory_mode") as "immediate" | "on_shipment" | "manual";
     const enableRecipes = form.get("enable_recipes") === "on";
 
     if (isNaN(Number(initial)) || isNaN(Number(cash)) || isNaN(Number(assets))) {
@@ -140,7 +169,6 @@ export default function JournalPage() {
       total_initial_investment: initial,
       starting_cash_balance: cash,
       current_assets_value: assets,
-      inventory_deduction_mode: inventoryMode,
       enable_recipes: enableRecipes,
     });
   };
@@ -159,10 +187,7 @@ export default function JournalPage() {
         toast.error("Please fill in at least item name and total");
         return;
       }
-      const verb = entry_type === "revenue" ? "sold"
-        : entry_type === "inventory_purchase" ? "bought"
-          : entry_type === "inventory_use" ? "used"
-            : "paid";
+      const verb = entry_type === "revenue" ? "sold" : "paid";
       const qtyPart = quantity ? `${quantity} ${unit || 'unit'}` : '';
       const line = `${verb} ${qtyPart} ${item_name} for ${total}$`.trim();
       saveDay.mutate({ raw_text: line, date: selectedDate });
@@ -193,13 +218,20 @@ export default function JournalPage() {
 
   const settingsDefaults = settingsQuery.data;
 
+  // Check if baselines have been configured (any value > 0)
+  const baselinesConfigured = settingsDefaults && (
+    Number(settingsDefaults.total_initial_investment) > 0 ||
+    Number(settingsDefaults.starting_cash_balance) > 0 ||
+    Number(settingsDefaults.current_assets_value) > 0
+  );
+
   const formattedTotals = useMemo(() => {
     if (!totals) return null;
     return [
-      { label: "Revenue", value: totals.revenue, accent: "text-emerald-600" },
-      { label: "Cost", value: totals.cost, accent: "text-rose-600" },
-      { label: "Net", value: totals.net, accent: "text-slate-900" },
-      { label: "Cumulative Net", value: totals.cumulative_net, accent: "text-slate-900" },
+      { label: "Revenue", value: totals.revenue, accent: "text-emerald-500" },
+      { label: "Cost", value: totals.cost, accent: "text-red-500" },
+      { label: "Net", value: totals.net, accent: "text-foreground" },
+      { label: "Cumulative Net", value: totals.cumulative_net, accent: "text-foreground" },
     ];
   }, [totals]);
 
@@ -208,14 +240,14 @@ export default function JournalPage() {
       {/* Header */}
       <header className="flex flex-wrap gap-4 items-end justify-between">
         <div>
-          <h1 className="text-2xl font-semibold text-slate-900">Journal</h1>
-          <p className="text-sm text-slate-500 mt-1">
+          <h1 className="text-2xl font-semibold text-foreground">Journal</h1>
+          <p className="text-sm text-muted-foreground mt-1">
             Log daily activity in any language - we reconcile everything automatically
           </p>
         </div>
         <div className="flex items-center gap-3">
           <div>
-            <Label htmlFor="journal-date" className="text-sm text-slate-600">Date</Label>
+            <Label htmlFor="journal-date" className="text-sm text-muted-foreground">Date</Label>
             <Input
               id="journal-date"
               type="date"
@@ -242,10 +274,25 @@ export default function JournalPage() {
       {settingsQuery.error && <ErrorAlert error={settingsQuery.error} onRetry={() => settingsQuery.refetch()} />}
 
       {/* Baseline Settings */}
-      <section className="rounded-xl border bg-white p-6 shadow-sm">
-        <header className="mb-4">
-          <h2 className="font-semibold text-slate-900">Baseline Setup</h2>
-          <p className="text-sm text-slate-500 mt-1">Configure your organisation-level financial anchors</p>
+      <section className="rounded-xl border bg-card text-card-foreground p-6 shadow-sm">
+        <header className="flex items-start justify-between mb-4">
+          <div>
+            <h2 className="font-semibold text-foreground">Baseline Setup</h2>
+            <p className="text-sm text-muted-foreground mt-1">
+              {baselinesConfigured
+                ? "Your financial baselines are configured"
+                : "Configure your organisation-level financial anchors"}
+            </p>
+          </div>
+          {baselinesConfigured && !showBaselineForm && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowBaselineForm(true)}
+            >
+              Edit Settings
+            </Button>
+          )}
         </header>
 
         {settingsQuery.isLoading && (
@@ -256,8 +303,31 @@ export default function JournalPage() {
           </div>
         )}
 
-        {settingsDefaults && (
-          <form onSubmit={handleSettingsSubmit} className="space-y-4">
+        {/* Collapsed summary view when configured */}
+        {settingsDefaults && baselinesConfigured && !showBaselineForm && (
+          <div className="grid gap-4 md:grid-cols-3">
+            <div className="rounded-lg bg-muted p-4">
+              <p className="text-sm text-muted-foreground">Initial Investment</p>
+              <p className="text-lg font-semibold text-foreground">${settingsDefaults.total_initial_investment}</p>
+            </div>
+            <div className="rounded-lg bg-muted p-4">
+              <p className="text-sm text-muted-foreground">Starting Cash</p>
+              <p className="text-lg font-semibold text-foreground">${settingsDefaults.starting_cash_balance}</p>
+            </div>
+            <div className="rounded-lg bg-muted p-4">
+              <p className="text-sm text-muted-foreground">Current Assets</p>
+              <p className="text-lg font-semibold text-foreground">${settingsDefaults.current_assets_value}</p>
+            </div>
+          </div>
+        )}
+
+        {/* Expanded form view when editing or not configured */}
+        {settingsDefaults && (!baselinesConfigured || showBaselineForm) && (
+          <form onSubmit={(e) => {
+            handleSettingsSubmit(e);
+            // Collapse form after successful save
+            if (baselinesConfigured) setShowBaselineForm(false);
+          }} className="space-y-4">
             <div className="grid gap-4 md:grid-cols-3">
               <div className="space-y-2">
                 <Label htmlFor="initial">Total Initial Investment</Label>
@@ -291,69 +361,43 @@ export default function JournalPage() {
               </div>
             </div>
 
-            {/* Inventory Settings */}
-            <div className="pt-4 border-t border-slate-200">
-              <h3 className="text-sm font-medium text-slate-700 mb-3">Inventory Settings</h3>
-              <div className="grid gap-4 md:grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor="inventory_mode">When to Deduct Inventory</Label>
-                  <select
-                    id="inventory_mode"
-                    name="inventory_mode"
-                    defaultValue={settingsDefaults.inventory_deduction_mode ?? "immediate"}
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900"
-                  >
-                    <option value="immediate">On Sale (Physical Retail)</option>
-                    <option value="on_shipment">On Shipment (E-commerce)</option>
-                    <option value="manual">Manual Only (Services/Drop-shipping)</option>
-                  </select>
-                  <p className="text-xs text-slate-500">
-                    Choose when inventory should be automatically reduced
-                  </p>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="enable_recipes">Enable Recipes (F&amp;B)</Label>
-                  <div className="flex items-center gap-2 mt-2">
-                    <input
-                      type="checkbox"
-                      id="enable_recipes"
-                      name="enable_recipes"
-                      defaultChecked={settingsDefaults.enable_recipes ?? false}
-                      className="h-4 w-4 rounded border-slate-300 text-slate-900 focus:ring-slate-900"
-                    />
-                    <span className="text-sm text-slate-600">
-                      Define recipes to auto-deduct ingredients when selling products
-                    </span>
-                  </div>
-                </div>
-              </div>
+            <div className="flex gap-2">
+              <Button type="submit" disabled={updateSettings.isPending}>
+                {updateSettings.isPending ? "Saving..." : "Save Settings"}
+              </Button>
+              {baselinesConfigured && showBaselineForm && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setShowBaselineForm(false)}
+                >
+                  Cancel
+                </Button>
+              )}
             </div>
-
-            <Button type="submit" disabled={updateSettings.isPending}>
-              {updateSettings.isPending ? "Saving..." : "Save Settings"}
-            </Button>
           </form>
         )}
       </section>
 
+
       {/* Main Content Grid */}
       <section className="grid gap-6 lg:grid-cols-[2fr_1fr]">
         {/* Journal Entry Form */}
-        <div className="rounded-xl border bg-white p-6 shadow-sm space-y-4">
+        <div className="rounded-xl border bg-card text-card-foreground p-6 shadow-sm space-y-4">
           <header className="flex items-start justify-between">
             <div>
-              <h2 className="font-semibold text-slate-900">Daily Entry</h2>
-              <p className="text-sm text-slate-500 mt-1">
+              <h2 className="font-semibold text-foreground">Daily Entry</h2>
+              <p className="text-sm text-muted-foreground mt-1">
                 Log activity using any mix of English, French, or Arabic
               </p>
             </div>
             {/* Toggle Switch */}
-            <div className="flex items-center gap-2 bg-slate-100 rounded-lg p-1">
+            <div className="flex items-center gap-2 bg-muted rounded-lg p-1">
               <button
                 onClick={() => setEntryMode("freetext")}
                 className={`px-3 py-1.5 text-sm rounded-md transition-colors ${entryMode === "freetext"
-                  ? "bg-white shadow text-slate-900"
-                  : "text-slate-600 hover:text-slate-900"
+                  ? "bg-background shadow text-foreground font-medium"
+                  : "text-muted-foreground hover:text-foreground"
                   }`}
               >
                 Free Text
@@ -361,8 +405,8 @@ export default function JournalPage() {
               <button
                 onClick={() => setEntryMode("structured")}
                 className={`px-3 py-1.5 text-sm rounded-md transition-colors ${entryMode === "structured"
-                  ? "bg-white shadow text-slate-900"
-                  : "text-slate-600 hover:text-slate-900"
+                  ? "bg-background shadow text-foreground font-medium"
+                  : "text-muted-foreground hover:text-foreground"
                   }`}
               >
                 Form
@@ -379,7 +423,7 @@ export default function JournalPage() {
                 onChange={(e) => setNotes(e.target.value)}
                 rows={10}
                 placeholder="sold 5 coffees for $25&#10;bought milk $6&#10;paid rent $400"
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-slate-900"
+                className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-ring"
               />
             </div>
           ) : (
@@ -391,12 +435,10 @@ export default function JournalPage() {
                   id="entry-type"
                   value={structuredEntry.entry_type}
                   onChange={(e) => setStructuredEntry(prev => ({ ...prev, entry_type: e.target.value as StructuredEntry["entry_type"] }))}
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900"
+                  className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                 >
                   <option value="revenue">Sale / Revenue</option>
-                  <option value="inventory_purchase">Purchase (Inventory)</option>
                   <option value="cost">Expense / Cost</option>
-                  <option value="inventory_use">Use Inventory</option>
                 </select>
               </div>
               {/* Item Name */}
@@ -427,7 +469,7 @@ export default function JournalPage() {
                     id="unit"
                     value={structuredEntry.unit}
                     onChange={(e) => setStructuredEntry(prev => ({ ...prev, unit: e.target.value }))}
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900"
+                    className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                   >
                     <option value="unit">unit</option>
                     <option value="kg">kg</option>
@@ -473,8 +515,8 @@ export default function JournalPage() {
         </div>
 
         {/* Totals Card */}
-        <div className="rounded-xl border bg-white p-6 shadow-sm">
-          <h3 className="font-semibold text-slate-900 mb-4">Today&apos;s Summary</h3>
+        <div className="rounded-xl border bg-card text-card-foreground p-6 shadow-sm">
+          <h3 className="font-semibold text-foreground mb-4">Today&apos;s Summary</h3>
 
           {dayQuery.isLoading && (
             <div className="space-y-3">
@@ -485,8 +527,8 @@ export default function JournalPage() {
           )}
 
           {!dayQuery.isLoading && !formattedTotals && (
-            <div className="text-center py-8 text-slate-500">
-              <svg className="w-12 h-12 mx-auto mb-3 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <div className="text-center py-8 text-muted-foreground">
+              <svg className="w-12 h-12 mx-auto mb-3 text-muted-foreground/50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
               </svg>
               <p className="text-sm">Save a journal entry to see totals</p>
@@ -496,14 +538,14 @@ export default function JournalPage() {
           {formattedTotals && (
             <div className="space-y-3">
               {formattedTotals.map((item) => (
-                <div key={item.label} className="flex justify-between items-center py-2 border-b last:border-0">
-                  <span className="text-sm text-slate-600">{item.label}</span>
+                <div key={item.label} className="flex justify-between items-center py-2 border-b border-border last:border-0">
+                  <span className="text-sm text-muted-foreground">{item.label}</span>
                   <span className={`font-semibold ${item.accent}`}>{formatCurrency(item.value)}</span>
                 </div>
               ))}
-              <div className="flex justify-between items-center py-2 pt-3 border-t">
-                <span className="text-sm text-slate-600">ROI</span>
-                <span className="font-semibold text-slate-900">
+              <div className="flex justify-between items-center py-2 pt-3 border-t border-border">
+                <span className="text-sm text-muted-foreground">ROI</span>
+                <span className="font-semibold text-foreground">
                   {totals?.roi !== undefined && totals?.roi !== null ? `${totals.roi.toFixed(2)}%` : "—"}
                 </span>
               </div>
@@ -513,22 +555,22 @@ export default function JournalPage() {
       </section>
 
       {/* Clarifications Section */}
-      <section className="rounded-xl border bg-white p-6 shadow-sm">
+      <section className="rounded-xl border bg-card text-card-foreground p-6 shadow-sm">
         <header className="mb-4">
-          <h3 className="font-semibold text-slate-900">Clarifications</h3>
-          <p className="text-sm text-slate-500 mt-1">
+          <h3 className="font-semibold text-foreground">Clarifications</h3>
+          <p className="text-sm text-muted-foreground mt-1">
             Resolve classification questions to keep inventory and costs accurate
           </p>
         </header>
 
         {clarifications.length === 0 ? (
           <div className="text-center py-8">
-            <div className="w-12 h-12 mx-auto mb-3 rounded-full bg-emerald-100 flex items-center justify-center">
-              <svg className="w-6 h-6 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <div className="w-12 h-12 mx-auto mb-3 rounded-full bg-secondary flex items-center justify-center">
+              <svg className="w-6 h-6 text-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
               </svg>
             </div>
-            <p className="text-sm text-slate-500">No clarifications pending</p>
+            <p className="text-sm text-muted-foreground">No clarifications pending</p>
           </div>
         ) : (
           <div className="space-y-4">
@@ -592,14 +634,14 @@ function ClarificationCard({ clarification, entry, onChange }: ClarificationCard
   };
 
   return (
-    <div className="rounded-lg border bg-amber-50 border-amber-200 p-4 space-y-4">
+    <div className="rounded-lg border bg-accent/50 border-accent p-4 space-y-4">
       <div className="flex items-start gap-3">
-        <div className="w-8 h-8 rounded-full bg-amber-100 flex items-center justify-center flex-shrink-0">
-          <span className="text-amber-700 text-lg">?</span>
+        <div className="w-8 h-8 rounded-full bg-accent flex items-center justify-center flex-shrink-0">
+          <span className="text-accent-foreground text-lg">?</span>
         </div>
         <div>
-          <p className="font-medium text-amber-900">{clarification.question}</p>
-          <p className="text-sm text-amber-700 mt-1">
+          <p className="font-medium text-foreground">{clarification.question}</p>
+          <p className="text-sm text-muted-foreground mt-1">
             Category: {clarification.category || "Uncategorized"} • Type: {clarification.entry_type}
           </p>
         </div>
@@ -617,9 +659,9 @@ function ClarificationCard({ clarification, entry, onChange }: ClarificationCard
               setTreatment("inventory");
               emitChange({ treat_as_inventory: "inventory" });
             }}
-            className="text-amber-600 focus:ring-amber-500"
+            className="text-primary focus:ring-ring"
           />
-          <span className="text-sm text-slate-700">Track as inventory</span>
+          <span className="text-sm text-foreground">Track as inventory</span>
         </label>
         <label className="flex items-center gap-2 cursor-pointer">
           <input
@@ -632,9 +674,9 @@ function ClarificationCard({ clarification, entry, onChange }: ClarificationCard
               setTreatment("expense");
               emitChange({ treat_as_inventory: "expense" });
             }}
-            className="text-amber-600 focus:ring-amber-500"
+            className="text-primary focus:ring-ring"
           />
-          <span className="text-sm text-slate-700">Expense today</span>
+          <span className="text-sm text-foreground">Expense today</span>
         </label>
       </div>
 

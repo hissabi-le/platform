@@ -12,7 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 # Shared constrained types
 # --------------------------------------------------------------------
 Id = Annotated[int, Field(ge=1)]
-ShortStr = Annotated[str, Field(min_length=1, max_length=64)]
+ShortStr = Annotated[str, Field(min_length=1, max_length=128)]
 MedStr = Annotated[str, Field(min_length=1, max_length=255)]
 LongStr = Annotated[str, Field(min_length=1, max_length=1000)]
 CurrencyCode = Literal["LBP", "USD", "EUR"]  # extend as needed
@@ -404,6 +404,8 @@ class JournalEntryCreate(JournalEntryBase):
 
 
 class JournalEntryRead(JournalEntryBase):
+    # Override total to allow None for entries with parsing failures (will be marked ambiguous)
+    total: Optional[Money] = None
     id: Optional[Id] = None
     created_at: Optional[datetime] = None
     model_config = ORM_CONFIG

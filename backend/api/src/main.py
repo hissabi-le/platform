@@ -163,7 +163,8 @@ async def list_documents(
 ):
     docs = await DocumentRepo().list(db, auth.user.org_id)
     return [DocumentRead(
-        id=d.id, filename=d.filename, content_type=d.content_type, size_bytes=d.size_bytes, created_at=d.created_at, doc_type=d.doc_type
+        id=d.id, org_id=d.org_id, filename=d.filename, content_type=d.content_type, 
+        storage_path=d.storage_path, size_bytes=d.size_bytes, created_at=d.created_at, doc_type=d.doc_type
     ) for d in docs]
 
 @app.get("/documents/{document_id}", response_model=DocumentDetail)

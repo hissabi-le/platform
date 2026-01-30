@@ -38,82 +38,182 @@ logger = logging.getLogger(__name__)
 # 4. Apply business rules (e.g., assume paid unless specified otherwise)
 # ============================================================================
 
-# System prompt with all business rules and chain-of-thought instructions
-AI_INGESTION_SYSTEM_PROMPT = """You are Hissabi's AI document ingestion system. Your job is to understand ANY uploaded financial document and extract structured transaction data.
+# Oracle AI System Prompt - Comprehensive Accounting Intelligence
+AI_INGESTION_SYSTEM_PROMPT = """You are a Senior Certified Public Accountant (CPA) with 20+ years of experience in accounting for businesses of all sizes financial analysis, and bookkeeping. You have deep expertise in GAAP, accounts receivable/payable management, and financial statement preparation, and are able to fully understand ANY financial document or information sheet a business might upload.
 
-## YOUR CAPABILITIES
-- Understand messy, informal, or irregularly formatted spreadsheets
-- Work with English, French, Arabic (including Arabizi), and mixed-language documents
-- Recognize financial data even when column names are non-standard
-- Infer missing information from context
+You are Hissabi's AI Accounting Oracle. You understand ANY financial document a small business might upload. Your job is to thoroughly analyze the document and extract ALL financial data with proper accounting classification.
 
-## BUSINESS RULES (IMPORTANT)
-1. PAYMENT STATUS: Assume ALL transactions are PAID unless explicitly marked as unpaid/outstanding/due/pending
-2. CURRENCY: Default to LBP (Lebanese Pound) unless another currency is specified
-3. DATES: Parse any date format; use today's date if unclear
-4. AMOUNTS: Positive = income/revenue, Negative = expense/cost
-5. CATEGORIES: Assign meaningful accounting categories for analytics
+## YOUR IDENTITY
+You are the brain behind a small business accounting platform. The users are entrepreneurs, shop owners, freelancers, and small business owners who may not have formal accounting training. You must be smart enough to understand their messy real-world documents and translate them into proper accounting records.
 
-## STANDARD CATEGORIES (use these exact values)
-Revenue:
-- "Revenue - Sales"
-- "Revenue - Services" 
-- "Revenue - Other"
+## DOCUMENT UNDERSTANDING
+Before extracting data, ANALYZE the entire document structure:
+1. What TYPE of document is this? (Sales log, expense tracker, invoice, bank statement, inventory list, AR/AP aging report, etc.)
+2. What TIME PERIOD does it cover? Look for explicit dates, or relative markers like "Month 1", "Week of", "Q1", etc.
+3. What SECTIONS exist? (Some spreadsheets have separate areas for income, expenses, receivables, etc.)
+4. What CURRENCY is being used? (Look for symbols: $, €, £, ل.ل, or text like USD, LBP, EUR)
 
-Expenses:
-- "Cost of Goods Sold"
+## COMPLETE CHART OF ACCOUNTS (use these exact category values)
+
+### ASSETS (Balance Sheet)
+- "Cash & Bank"
+- "Accounts Receivable" - money owed TO the business
+- "Inventory"
+- "Prepaid Expenses"
+- "Equipment & Assets"
+- "Other Current Assets"
+
+### LIABILITIES (Balance Sheet)  
+- "Accounts Payable" - money owed BY the business
+- "Accrued Expenses"
+- "Short-term Loans"
+- "Long-term Debt"
+- "Other Liabilities"
+
+### REVENUE (P&L - Income)
+- "Revenue - Sales" - product sales
+- "Revenue - Services" - service income
+- "Revenue - Other" - miscellaneous income
+
+### COST OF GOODS SOLD (P&L)
+- "Cost of Goods Sold" - direct costs of products sold
+- "Inventory Purchase" - buying inventory/stock
+
+### OPERATING EXPENSES (P&L)
 - "Operating Expenses - Rent"
-- "Operating Expenses - Utilities"
-- "Operating Expenses - Salaries"
-- "Operating Expenses - Supplies"
-- "Operating Expenses - Marketing"
+- "Operating Expenses - Utilities" (electricity, water, internet)
+- "Operating Expenses - Salaries" (wages, payroll)
+- "Operating Expenses - Supplies" (office supplies, cleaning)
+- "Operating Expenses - Marketing" (ads, promotions)
+- "Operating Expenses - Insurance"
+- "Operating Expenses - Maintenance"
 - "Operating Expenses - Other"
+
+### OTHER EXPENSES (P&L)
 - "Travel & Entertainment"
-- "Professional Fees"
+- "Professional Fees" (legal, accounting, consulting)
 - "Bank Fees & Interest"
 - "Tax Expense"
+- "Depreciation"
 
-Inventory/Assets:
-- "Inventory Purchase"
-- "Equipment & Assets"
+### EQUITY & OTHER
+- "Owner's Draw" - owner withdrawals
+- "Owner's Investment" - capital contributions
+- "Loan & Debt" - loan transactions
+- "Transfer" - internal transfers
+- "Uncategorized" - when truly unclear
 
-Other:
-- "Owner's Draw"
-- "Loan & Debt"
-- "Transfer"
-- "Uncategorized"
+## PAYMENT STATUS DETECTION (CRITICAL FOR AR/AP)
 
-## YOUR TASK
-For each row of data, you must:
-1. THINK: What kind of transaction is this? (reason through the data)
-2. EXTRACT: Pull out the key fields
-3. CATEGORIZE: Assign the appropriate category
-4. VALIDATE: Check if any information is missing or ambiguous
+DO NOT assume everything is paid. Carefully analyze each transaction:
+
+### Mark as UNPAID if you see ANY of these signals:
+- Words: "due", "owing", "outstanding", "receivable", "payable", "invoice", "to collect", "to pay", "pending", "credit", "on account", "net 30", "net 60"
+- Columns named: "due date", "payment due", "days outstanding", "aging", "balance due"
+- Invoice numbers without "paid" indicator
+- Aging buckets: "0-30 days", "30-60 days", "60-90 days", "90+ days"
+- Arabic/French equivalents: "مستحق", "دين", "à payer", "à recevoir"
+
+### Mark as PAID if you see:
+- Words: "paid", "settled", "cleared", "received", "collected", "cash", "completed"
+- Payment method noted: "check #", "wire", "credit card", "PayPal"
+- Receipt numbers or confirmation codes
+- Arabic/French equivalents: "مدفوع", "payé", "réglé"
+
+### DEFAULT LOGIC:
+- Bank statement transactions → PAID (already in bank)
+- Invoices without status → UNPAID (invoices are requests for payment)
+- Sales receipts → PAID (point of sale)
+- Bills/expenses without status → assume PAID unless aging report
+
+## AR/AP CLASSIFICATION (CRITICAL)
+
+### Accounts RECEIVABLE (money coming TO business):
+- Revenue marked as UNPAID → AR entry
+- Keywords: "customer owes", "invoice sent", "to collect", "sales on credit"
+- Aging reports showing money owed to you
+
+### Accounts PAYABLE (money going FROM business):
+- Expenses marked as UNPAID → AP entry  
+- Keywords: "bill due", "supplier invoice", "to pay", "vendor credit"
+- Aging reports showing money you owe
+
+## DATE HANDLING
+
+### Absolute dates - parse to YYYY-MM-DD:
+- "01/15/2024", "15-01-24", "Jan 15, 2024", "2024-01-15"
+
+### Relative dates - FLAG AS AMBIGUOUS:
+- "Month 1", "Week 3", "Q1", "Period 5", "M1", "W/E 15"
+- If you see these, set AMBIGUOUS_DATES=yes in metadata
+
+### No dates visible:
+- Use today's date but note uncertainty
+
+## LANGUAGE SUPPORT
+Understand and normalize from:
+- English, French, Arabic, Arabizi (Arabic written in Latin letters)
+- Mixed language documents
+- Common abbreviations: "inv" = invoice, "pmt" = payment, "rcpt" = receipt
+- Arabic accounting terms: مبيعات (sales), مشتريات (purchases), إيرادات (revenue), مصروفات (expenses)
+
+## YOUR ANALYSIS PROCESS
+
+1. **SCAN**: Read the entire document first. Understand its structure.
+2. **IDENTIFY**: What type of document? What time period? What sections?
+3. **CLASSIFY**: For each row, determine the proper accounting category
+4. **DETECT**: Is this paid or unpaid? Is it AR or AP?
+5. **EXTRACT**: Pull out all the structured data
+6. **FLAG**: Note any ambiguities (dates, categories, amounts)
 
 ## OUTPUT FORMAT
-Respond with your reasoning first (starting with "ANALYSIS:"), then output a line "---TRANSACTIONS---" followed by one transaction per line in this exact format:
 
-DATE|DESCRIPTION|AMOUNT|CATEGORY|CURRENCY|PAYMENT_STATUS|IS_INVENTORY|ITEM_NAME|QUANTITY|UNIT
-
-Rules for the output:
-- DATE: YYYY-MM-DD format
-- AMOUNT: Positive number (we'll infer sign from category)
-- PAYMENT_STATUS: "paid" or "unpaid"
-- IS_INVENTORY: "yes" or "no"
-- QUANTITY and UNIT: only if IS_INVENTORY is "yes"
-- Use | as delimiter, no quotes
-- Empty fields should be blank (just ||)
-
-Example:
+Start with your analysis:
+```
 ANALYSIS:
-Looking at this data, I see sales transactions and some expense payments...
-Row 1 appears to be a sale of coffee at $15...
+Document type: [type]
+Time period: [explicit dates or "ambiguous - needs user input"]
+Currency detected: [currency]
+Key observations: [what you noticed]
+
+[Your reasoning for each section/row]
+```
+
+Then output metadata line:
+```
+---METADATA---
+AMBIGUOUS_DATES=yes|no
+DETECTED_CURRENCY=USD|LBP|EUR|etc
+DOCUMENT_TYPE=sales_log|expense_tracker|invoice|bank_statement|inventory|ar_aging|ap_aging|mixed
+```
+
+Then output transactions:
+```
+---TRANSACTIONS---
+DATE|DESCRIPTION|AMOUNT|CATEGORY|CURRENCY|PAYMENT_STATUS|IS_AR|IS_AP|ITEM_NAME|QUANTITY|UNIT
+```
+
+Field rules:
+- DATE: YYYY-MM-DD (or "AMBIGUOUS" if relative dates used)
+- AMOUNT: Positive number (category determines if income/expense)
+- PAYMENT_STATUS: "paid" or "unpaid" (do NOT default to paid blindly)
+- IS_AR: "yes" if this is money owed TO business (unpaid revenue)
+- IS_AP: "yes" if this is money owed BY business (unpaid expense)
+- Use | delimiter, empty fields = blank
+
+Example output:
+---METADATA---
+AMBIGUOUS_DATES=no
+DETECTED_CURRENCY=USD
+DOCUMENT_TYPE=mixed
 
 ---TRANSACTIONS---
-2024-01-15|Coffee sales|15.00|Revenue - Sales|USD|paid|no|||
-2024-01-15|Office supplies|47.50|Operating Expenses - Supplies|USD|paid|no|||
-2024-01-15|Chicken purchase|200.00|Inventory Purchase|LBP|paid|yes|Chicken|10|kg
+2024-01-15|Coffee sales to customer ABC|150.00|Revenue - Sales|USD|unpaid|yes|no|||
+2024-01-15|Office rent January|1200.00|Operating Expenses - Rent|USD|paid|no|no|||
+2024-01-15|Supplier invoice - beans|500.00|Cost of Goods Sold|USD|unpaid|no|yes|||
+2024-01-15|Cash register sales|847.50|Revenue - Sales|USD|paid|no|no|||
 """
+
 
 
 @dramatiq.actor(max_retries=0)
@@ -192,18 +292,15 @@ async def _process_upload(upload_id: int, org_id: int, storage_path: str) -> Non
                 logger.info("AI ingested %d transactions from upload %s", len(ai_transactions), upload_id)
                 
                 for txn_data in ai_transactions:
-                    if txn_data.get("is_inventory"):
-                        # Inventory movement
-                        movement_created = await _persist_ai_inventory(
-                            session, txn_data, org_id, document.id if document else None
-                        )
-                        movement_count += int(movement_created)
-                    else:
-                        # Regular transaction
-                        txn_created = await _persist_ai_transaction(
-                            session, txn_data, org_id, upload_id
-                        )
-                        txn_count += int(txn_created)
+                    # Skip inventory logic - process everything as transactions
+                    # if txn_data.get("is_inventory"):
+                    #     movement_created = await _persist_ai_inventory(...)
+                    #     movement_count += int(movement_created)
+                    # else:
+                    txn_created = await _persist_ai_transaction(
+                        session, txn_data, org_id, upload_id
+                    )
+                    txn_count += int(txn_created)
             else:
                 # Fall back to excel_cleaner
                 logger.info("AI ingestion unavailable, falling back to excel_cleaner for upload %s", upload_id)
@@ -211,18 +308,26 @@ async def _process_upload(upload_id: int, org_id: int, storage_path: str) -> Non
                 rows = df.to_dict(orient="records")
                 
                 for row in rows:
-                    if _is_inventory_row(row):
-                        movement_created = await _persist_inventory_row(
-                            session, row, org_id, document.id if document else None
-                        )
-                        movement_count += int(movement_created)
-                    else:
-                        txn_created = await _persist_transaction_row(session, row, org_id, upload_id)
-                        txn_count += int(txn_created)
+                    # Skip inventory logic - process everything as transactions
+                    # if _is_inventory_row(row):
+                    #     movement_created = await _persist_inventory_row(...)
+                    #     movement_count += int(movement_created)
+                    # else:
+                    txn_created = await _persist_transaction_row(session, row, org_id, upload_id)
+                    txn_count += int(txn_created)
 
             upload.status = "done"
             session.add(upload)
             await session.commit()
+            
+            # Invalidate analytics cache so dashboard shows new data
+            try:
+                from ..cache.analytics_cache import analytics_cache
+                await analytics_cache.clear_org(org_id)
+                logger.info("Cleared analytics cache for org %s", org_id)
+            except Exception as cache_err:
+                logger.warning("Failed to clear analytics cache: %s", cache_err)
+            
             logger.info(
                 "Processed upload %s (transactions=%s, movements=%s)",
                 upload_id,
@@ -267,11 +372,11 @@ async def _ai_ingest_document(
         return None
     
     # Convert DataFrame to a readable format for GPT
-    # Limit to first 100 rows for token management
-    rows_for_ai = df.head(100).to_dict(orient="records")
+    # Increased limit to 500 rows for better coverage of large documents
+    rows_for_ai = df.head(500).to_dict(orient="records")
     
     # Build user prompt with the actual data
-    user_prompt = f"""Here is a spreadsheet with {len(df)} rows (showing first {len(rows_for_ai)}):
+    user_prompt = f"""Here is a financial document with {len(df)} rows (showing first {len(rows_for_ai)}):
 
 COLUMN HEADERS: {list(df.columns)}
 
@@ -285,20 +390,26 @@ DATA:
     user_prompt += f"""
 TOTAL ROWS: {len(df)}
 
-Please analyze this document, understand each transaction, and extract the financial data.
-Remember: Assume all transactions are PAID unless explicitly marked otherwise.
+Please thoroughly analyze this document:
+1. Identify the document type and structure
+2. Detect the time period (flag if dates are ambiguous like "Month 1")
+3. Classify each transaction with proper accounting category
+4. Detect payment status - DO NOT assume paid unless evidence
+5. Identify any AR (receivables) or AP (payables) entries
+
 Today's date: {datetime.utcnow().strftime('%Y-%m-%d')}
 """
     
     try:
+        # Use o3-mini reasoning model for complex accounting analysis
         response = llm.client.chat.completions.create(
-            model="gpt-4o-mini",
+            model="o3-mini",
             messages=[
                 {"role": "system", "content": AI_INGESTION_SYSTEM_PROMPT},
                 {"role": "user", "content": user_prompt}
             ],
             temperature=0.1,
-            max_tokens=4000,
+            max_tokens=8000,  # Increased for larger documents
         )
         
         content = response.choices[0].message.content or ""
@@ -313,35 +424,59 @@ Today's date: {datetime.utcnow().strftime('%Y-%m-%d')}
 
 def _parse_ai_response(content: str) -> Optional[list[dict[str, Any]]]:
     """
-    Parse the AI's chain-of-thought response into structured transactions.
+    Parse the AI Oracle's response into structured transactions.
     
-    We parse delimited text instead of asking for JSON because:
-    1. Less hallucination - model is better at natural text
-    2. More robust - easy to parse simple delimited format
-    3. Chain-of-thought reasoning improves accuracy
+    New format includes:
+    - METADATA section with document info (ambiguous dates, currency, type)
+    - TRANSACTIONS section with AR/AP classification
+    
+    Returns:
+        List of transaction dicts with proper AR/AP flags and payment status.
     """
     if "---TRANSACTIONS---" not in content:
         logger.warning("AI response missing TRANSACTIONS delimiter")
         return None
     
-    # Split at the delimiter and get the transactions part
-    parts = content.split("---TRANSACTIONS---")
-    if len(parts) < 2:
-        return None
+    # Parse metadata section if present
+    metadata = {
+        "ambiguous_dates": False,
+        "detected_currency": "LBP",
+        "document_type": "mixed",
+    }
     
-    transactions_text = parts[1].strip()
+    if "---METADATA---" in content:
+        metadata_section = content.split("---METADATA---")[1].split("---TRANSACTIONS---")[0]
+        for line in metadata_section.strip().split("\n"):
+            line = line.strip()
+            if "=" in line:
+                key, value = line.split("=", 1)
+                key = key.strip().lower()
+                value = value.strip().lower()
+                if "ambiguous" in key:
+                    metadata["ambiguous_dates"] = value == "yes"
+                elif "currency" in key:
+                    metadata["detected_currency"] = value.upper()
+                elif "type" in key:
+                    metadata["document_type"] = value
+    
+    # Log metadata for debugging
+    logger.info("AI Metadata: %s", metadata)
+    
+    # Split at the transactions delimiter
+    transactions_text = content.split("---TRANSACTIONS---")[1].strip()
     if not transactions_text:
         return []
     
     transactions = []
     today = datetime.utcnow().strftime("%Y-%m-%d")
+    default_currency = metadata.get("detected_currency", "LBP")
     
     for line in transactions_text.strip().split("\n"):
         line = line.strip()
-        if not line or line.startswith("#"):
+        if not line or line.startswith("#") or line.startswith("```"):
             continue
         
-        # Parse: DATE|DESCRIPTION|AMOUNT|CATEGORY|CURRENCY|PAYMENT_STATUS|IS_INVENTORY|ITEM_NAME|QUANTITY|UNIT
+        # New format: DATE|DESCRIPTION|AMOUNT|CATEGORY|CURRENCY|PAYMENT_STATUS|IS_AR|IS_AP|ITEM_NAME|QUANTITY|UNIT
         parts = line.split("|")
         if len(parts) < 6:
             logger.debug("Skipping malformed line: %s", line[:50])
@@ -352,8 +487,16 @@ def _parse_ai_response(content: str) -> Optional[list[dict[str, Any]]]:
             description = parts[1].strip()
             amount_str = parts[2].strip()
             category = parts[3].strip() or "Uncategorized"
-            currency = parts[4].strip() or "LBP"
+            currency = parts[4].strip() or default_currency
             payment_status = parts[5].strip().lower() or "paid"
+            
+            # Parse IS_AR and IS_AP (new fields)
+            is_ar = False
+            is_ap = False
+            if len(parts) >= 7:
+                is_ar = parts[6].strip().lower() == "yes"
+            if len(parts) >= 8:
+                is_ap = parts[7].strip().lower() == "yes"
             
             # Parse amount
             try:
@@ -366,15 +509,19 @@ def _parse_ai_response(content: str) -> Optional[list[dict[str, Any]]]:
             if not description or amount == 0:
                 continue
             
-            # Parse date
-            try:
-                txn_date = datetime.strptime(date_str, "%Y-%m-%d")
-            except ValueError:
+            # Parse date - handle AMBIGUOUS marker
+            if date_str.upper() == "AMBIGUOUS":
                 txn_date = datetime.utcnow()
+            else:
+                try:
+                    txn_date = datetime.strptime(date_str, "%Y-%m-%d")
+                except ValueError:
+                    txn_date = datetime.utcnow()
             
             # Determine if expense (make amount negative for expenses)
             is_expense = any(cat in category for cat in [
-                "Expense", "Cost", "Tax", "Fees", "Purchase", "Draw", "Loan", "Debt"
+                "Expense", "Cost", "Tax", "Fees", "Purchase", "Draw", "Loan", "Debt", 
+                "Payable", "Depreciation", "Interest"
             ])
             if is_expense and amount > 0:
                 amount = -amount
@@ -386,25 +533,26 @@ def _parse_ai_response(content: str) -> Optional[list[dict[str, Any]]]:
                 "category": category[:100],
                 "currency": currency[:10],
                 "payment_status": "paid" if payment_status == "paid" else "unpaid",
+                "is_ar": is_ar,  # Accounts Receivable (money owed TO business)
+                "is_ap": is_ap,  # Accounts Payable (money owed BY business)
                 "is_inventory": False,
                 "item_name": None,
                 "quantity": None,
                 "unit": None,
+                "ambiguous_date": metadata.get("ambiguous_dates", False),
             }
             
-            # Check if this is an inventory item
-            if len(parts) >= 7:
-                is_inventory = parts[6].strip().lower() == "yes"
-                if is_inventory:
+            # Parse inventory fields if present (positions 8, 9, 10)
+            if len(parts) >= 9 and parts[8].strip():
+                txn_data["item_name"] = parts[8].strip()
+            if len(parts) >= 10 and parts[9].strip():
+                try:
+                    txn_data["quantity"] = float(parts[9].strip())
                     txn_data["is_inventory"] = True
-                    txn_data["item_name"] = parts[7].strip() if len(parts) > 7 else description
-                    if len(parts) > 8 and parts[8].strip():
-                        try:
-                            txn_data["quantity"] = float(parts[8].strip())
-                        except ValueError:
-                            pass
-                    if len(parts) > 9:
-                        txn_data["unit"] = parts[9].strip() or None
+                except ValueError:
+                    pass
+            if len(parts) >= 11:
+                txn_data["unit"] = parts[10].strip() or None
             
             transactions.append(txn_data)
             
@@ -412,6 +560,7 @@ def _parse_ai_response(content: str) -> Optional[list[dict[str, Any]]]:
             logger.debug("Error parsing AI row: %s - %s", line[:50], e)
             continue
     
+    logger.info("Parsed %d transactions from AI response", len(transactions))
     return transactions
 
 

@@ -57,14 +57,28 @@ app = FastAPI(title=settings.app_name, version="0.2.0")
 
 # CORS Configuration
 from fastapi.middleware.cors import CORSMiddleware
+import logging
 
 # Use CORS_ORIGINS from settings (set via env var)
 # This includes Railway frontend URL when CORS_ORIGINS is configured
 _cors_origins = list(settings.cors_origins)  # From CORS_ORIGINS env var
+
+# Add Railway production URLs
+_cors_origins.extend([
+    "https://cheerful-caring-production.up.railway.app",
+    "https://hissabi.com",
+    "https://www.hissabi.com",
+])
+
 # Add common development origins if not already present
 for origin in ["http://localhost:3000", "http://127.0.0.1:3000"]:
     if origin not in _cors_origins:
         _cors_origins.append(origin)
+
+# Remove duplicates
+_cors_origins = list(set(_cors_origins))
+
+logging.info(f"CORS allowed origins: {_cors_origins}")
 
 app.add_middleware(
     CORSMiddleware,

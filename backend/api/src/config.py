@@ -23,6 +23,16 @@ class Settings(BaseSettings):
     database_url: str = Field(alias="DATABASE_URL")
     read_database_url: str | None = Field(default=None, alias="READ_DATABASE_URL")
 
+    @field_validator("database_url", "read_database_url", mode="before")
+    @classmethod
+    def _fix_postgres_url(cls, value: str | None) -> str | None:
+        """Convert postgresql:// to postgresql+asyncpg:// for SQLAlchemy async."""
+        if value is None:
+            return None
+        if value.startswith("postgresql://") and "+asyncpg" not in value:
+            return value.replace("postgresql://", "postgresql+asyncpg://", 1)
+        return value
+
     redis_url: str = Field(default="", alias="REDIS_URL")  # Empty = use local cache
 
     openai_api_key: str | None = Field(default=None, alias="OPENAI_API_KEY")

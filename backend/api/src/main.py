@@ -58,14 +58,13 @@ app = FastAPI(title=settings.app_name, version="0.2.0")
 # CORS Configuration
 from fastapi.middleware.cors import CORSMiddleware
 
-# Build allowed origins list (no wildcards when using credentials)
-_cors_origins = [
-    "http://localhost:3000",  # Next.js dev
-    "http://127.0.0.1:3000",  # Alternative localhost
-    "https://app.hissabi.com",  # Production frontend
-]
-if hasattr(settings, 'frontend_url') and settings.frontend_url and settings.frontend_url != "*":
-    _cors_origins.append(settings.frontend_url)
+# Use CORS_ORIGINS from settings (set via env var)
+# This includes Railway frontend URL when CORS_ORIGINS is configured
+_cors_origins = list(settings.cors_origins)  # From CORS_ORIGINS env var
+# Add common development origins if not already present
+for origin in ["http://localhost:3000", "http://127.0.0.1:3000"]:
+    if origin not in _cors_origins:
+        _cors_origins.append(origin)
 
 app.add_middleware(
     CORSMiddleware,

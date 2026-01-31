@@ -77,7 +77,9 @@ class Settings(BaseSettings):
 
     @field_validator("allowed_mime_types", "cors_origins", mode="before")
     @classmethod
-    def _split_csv(cls, value: Sequence[str] | str) -> List[str]:
+    def _split_csv(cls, value: Sequence[str] | str | None) -> List[str]:
+        if value is None or value == "":
+            return ["http://localhost:3000"]  # Safe default
         if isinstance(value, str):
             return [part.strip() for part in value.split(",") if part.strip()]
         return list(value)

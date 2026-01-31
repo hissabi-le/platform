@@ -418,7 +418,7 @@ Today's date: {datetime.utcnow().strftime('%Y-%m-%d')}
         return _parse_ai_response(content)
         
     except Exception as e:
-        logger.warning("AI ingestion failed: %s", e)
+        logger.exception("AI ingestion failed with error: %s", e)
         return None
 
 
@@ -711,7 +711,9 @@ async def _persist_inventory_row(
 def _normalize_metadata(row: Mapping[str, Any]) -> dict[str, Any]:
     normalized: dict[str, Any] = {}
     for key, value in row.items():
-        if isinstance(value, (str, int, float, bool)) or value is None:
+        if pd.isna(value):  # Handles NaN, None, NaT
+            normalized[key] = None
+        elif isinstance(value, (int, float, bool)):
             normalized[key] = value
         elif isinstance(value, (pd.Timestamp, datetime)):
             normalized[key] = str(value)

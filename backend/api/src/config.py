@@ -40,27 +40,27 @@ class Settings(BaseSettings):
     upload_max_mb: int = Field(default=25, alias="UPLOAD_MAX_MB")
     
     # Store as string to avoid pydantic-settings JSON parsing issues
-    _allowed_mime_types_raw: str = Field(
+    allowed_mime_types_str: str = Field(
         default="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv,application/pdf",
         alias="ALLOWED_MIME_TYPES",
     )
     
     # Store as string to avoid pydantic-settings JSON parsing issues
-    _cors_origins_raw: str = Field(default="http://localhost:3000", alias="CORS_ORIGINS")
+    cors_origins_str: str = Field(default="http://localhost:3000", alias="CORS_ORIGINS")
 
     @property
     def cors_origins(self) -> List[str]:
         """Parse CORS_ORIGINS from comma-separated string."""
-        if not self._cors_origins_raw:
+        if not self.cors_origins_str:
             return ["http://localhost:3000"]
-        return [part.strip() for part in self._cors_origins_raw.split(",") if part.strip()]
+        return [part.strip() for part in self.cors_origins_str.split(",") if part.strip()]
 
     @property
     def allowed_mime_types(self) -> List[str]:
         """Parse ALLOWED_MIME_TYPES from comma-separated string."""
-        if not self._allowed_mime_types_raw:
+        if not self.allowed_mime_types_str:
             return ["application/pdf", "text/csv"]
-        return [part.strip() for part in self._allowed_mime_types_raw.split(",") if part.strip()]
+        return [part.strip() for part in self.allowed_mime_types_str.split(",") if part.strip()]
 
     jwt_secret: str = Field(default="change-me", alias="JWT_SECRET")
     jwt_issuer: str = Field(default="hissabi", alias="JWT_ISSUER")

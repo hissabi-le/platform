@@ -124,10 +124,10 @@ export default function UploadPage() {
         onDragOver={handleDrag}
         onDrop={handleDrop}
         className={`relative flex flex-col items-center justify-center rounded-xl border-2 border-dashed p-12 transition-colors ${dragActive
-            ? "border-emerald-500 bg-emerald-50"
-            : file
-              ? "border-slate-300 bg-slate-50"
-              : "border-slate-300 hover:border-slate-400"
+          ? "border-emerald-500 bg-emerald-50"
+          : file
+            ? "border-slate-300 bg-slate-50"
+            : "border-slate-300 hover:border-slate-400"
           }`}
       >
         {file ? (

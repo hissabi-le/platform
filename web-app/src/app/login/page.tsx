@@ -71,7 +71,7 @@ export default function LoginPage() {
               <span className="text-slate-900 font-bold text-xl">H</span>
             </div>
             <div>
-              <span className="font-semibold text-white text-xl">Hissabi</span>
+              <span className="font-semibold text-white text-xl">Hisabi</span>
               <span className="block text-sm text-slate-400">SMB Accounting</span>
             </div>
           </Link>
@@ -98,7 +98,7 @@ export default function LoginPage() {
         </div>
 
         <div className="relative z-10 text-sm text-slate-500">
-          © {new Date().getFullYear()} Hissabi. All rights reserved.
+          © {new Date().getFullYear()} Hisabi. All rights reserved.
         </div>
       </div>
 
@@ -112,7 +112,7 @@ export default function LoginPage() {
                 <span className="text-white font-bold text-xl">H</span>
               </div>
               <div className="text-left">
-                <span className="font-semibold text-slate-900 text-xl">Hissabi</span>
+                <span className="font-semibold text-slate-900 text-xl">Hisabi</span>
                 <span className="block text-sm text-slate-500">SMB Accounting</span>
               </div>
             </Link>

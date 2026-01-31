@@ -5,10 +5,11 @@ import { useState, useEffect, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 
 import { useAuth } from "@/hooks/useAuth";
+import { useTheme } from "next-themes";
 
 const baseLinks = [
   { href: "/app", label: "Dashboard", icon: "📊", info: "Overview combining analytics and daily operations." },
-  { href: "/app/upload", label: "Upload", icon: "📤", info: "Send spreadsheets or statements into Hissabi." },
+  { href: "/app/upload", label: "Upload", icon: "📤", info: "Send spreadsheets or statements into Hisabi." },
   { href: "/app/documents", label: "Documents", icon: "📄", info: "Browse and download generated reports." },
   { href: "/app/journal", label: "Journal", icon: "📝", info: "Log day-to-day notes when away from spreadsheets." },
   { href: "/app/receivables", label: "Receivables", icon: "💳", info: "Track money owed to you and money you owe." },
@@ -59,7 +60,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen grid grid-cols-[240px_1fr]">
       {/* Sidebar */}
-      <aside className="border-r bg-card flex flex-col">
+      {/* Sidebar - z-index boosted to appear above header for tooltips */}
+      <aside className="border-r bg-card flex flex-col z-30 relative">
         {/* Logo */}
         <div className="p-6 border-b">
           <Link href="/app" className="flex items-center gap-3 group">
@@ -67,7 +69,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               <span className="text-primary-foreground font-bold text-lg">H</span>
             </div>
             <div>
-              <span className="font-semibold text-foreground">Hissabi</span>
+              <span className="font-semibold text-foreground">Hisabi</span>
               <span className="block text-xs text-muted-foreground">Accounting</span>
             </div>
           </Link>
@@ -81,8 +83,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             return (
               <div
                 key={link.href}
-                className={`relative ${mounted ? 'animate-fade-in-up' : 'opacity-0'}`}
-                style={{ animationDelay: `${index * 0.05}s` }}
+                className={`relative ${mounted ? 'animate-fade-in-up' : 'opacity-0'} group`}
+                style={{ animationDelay: `${index * 0.05}s`, zIndex: infoVisible ? 51 : 'auto' }}
               >
                 <div className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-all duration-200 ${active
                   ? "bg-primary text-primary-foreground shadow-md"
@@ -116,7 +118,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                 {/* Info Tooltip */}
                 {infoVisible && (
                   <div
-                    className="absolute left-full top-0 z-50 w-56 ml-3 rounded-xl border bg-popover p-4 shadow-xl animate-scale-in text-popover-foreground"
+                    className="absolute left-full top-0 ml-3 w-56 rounded-xl border bg-popover p-4 shadow-xl animate-scale-in text-popover-foreground z-[100]"
                     role="tooltip"
                   >
                     <div className="flex items-center gap-2 mb-2">
@@ -160,6 +162,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           >
             Sign out
           </button>
+          <ThemeToggle />
         </div>
       </aside>
 
@@ -193,9 +196,58 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
         {/* Footer */}
         <footer className="px-8 py-4 border-t bg-card text-center text-xs text-muted-foreground">
-          © {new Date().getFullYear()} Hissabi • SMB Accounting for Lebanon
+          © {new Date().getFullYear()} Hisabi • SMB Accounting for Lebanon
         </footer>
       </main>
+    </div>
+  );
+}
+
+function ThemeToggle() {
+  const { theme, setTheme } = useTheme();
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  if (!mounted) return null;
+
+  return (
+    <div className="flex items-center gap-2 mt-2 px-3">
+      <span className="text-xs text-muted-foreground flex-1">Theme</span>
+      <div className="flex items-center gap-1 bg-muted rounded-lg p-0.5">
+        <button
+          onClick={() => setTheme("light")}
+          className={`px-2 py-1 text-xs rounded-md transition-all ${theme === "light"
+              ? "bg-background shadow text-foreground font-medium"
+              : "text-muted-foreground hover:text-foreground"
+            }`}
+          aria-label="Light mode"
+        >
+          ☀️
+        </button>
+        <button
+          onClick={() => setTheme("dark")}
+          className={`px-2 py-1 text-xs rounded-md transition-all ${theme === "dark"
+              ? "bg-background shadow text-foreground font-medium"
+              : "text-muted-foreground hover:text-foreground"
+            }`}
+          aria-label="Dark mode"
+        >
+          🌙
+        </button>
+        <button
+          onClick={() => setTheme("system")}
+          className={`px-2 py-1 text-xs rounded-md transition-all ${theme === "system"
+              ? "bg-background shadow text-foreground font-medium"
+              : "text-muted-foreground hover:text-foreground"
+            }`}
+          aria-label="System theme"
+        >
+          🖥️
+        </button>
+      </div>
     </div>
   );
 }

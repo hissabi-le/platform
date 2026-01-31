@@ -65,7 +65,7 @@ export default function HomePage() {
             <div className="h-9 w-9 rounded-xl bg-slate-900 flex items-center justify-center group-hover:scale-105 transition-transform">
               <span className="text-white font-bold">H</span>
             </div>
-            <span className="font-semibold tracking-tight text-lg">Hissabi</span>
+            <span className="font-semibold tracking-tight text-lg">Hisabi</span>
           </Link>
           <nav className="hidden md:flex items-center gap-8 text-sm">
             <a href="#features" className="text-slate-600 hover:text-slate-900 transition-colors">Features</a>
@@ -105,7 +105,7 @@ export default function HomePage() {
             </h1>
             <p className="text-lg text-slate-600 max-w-lg leading-relaxed">
               Upload your business documents (even messy, mixed-language sheets).
-              Hissabi cleans, analyzes, and generates balance sheets, P&L, and inventory—ready for decisions.
+              Hisabi cleans, analyzes, and generates balance sheets, P&L, and inventory—ready for decisions.
             </p>
             <div className="flex flex-col gap-4 sm:flex-row">
               <Link
@@ -128,7 +128,7 @@ export default function HomePage() {
                 ))}
               </div>
               <div className="text-sm text-slate-600">
-                <span className="font-semibold text-slate-900">100+</span> SMBs trust Hissabi
+                <span className="font-semibold text-slate-900">100+</span> SMBs trust Hisabi
               </div>
             </div>
           </div>
@@ -140,7 +140,7 @@ export default function HomePage() {
                 <div className="w-3 h-3 rounded-full bg-red-400" />
                 <div className="w-3 h-3 rounded-full bg-yellow-400" />
                 <div className="w-3 h-3 rounded-full bg-green-400" />
-                <span className="ml-4 text-xs text-slate-500">dashboard.hissabi.com</span>
+                <span className="ml-4 text-xs text-slate-500">dashboard.hisabi.com</span>
               </div>
               <div className="p-6 space-y-4">
                 <div className="flex items-center justify-between">
@@ -178,7 +178,7 @@ export default function HomePage() {
       <section id="features" className="border-t bg-slate-50">
         <div className="mx-auto max-w-6xl px-4 py-20">
           <div className="text-center max-w-2xl mx-auto mb-16">
-            <h2 className="text-3xl font-bold">Why Hissabi</h2>
+            <h2 className="text-3xl font-bold">Why Hisabi</h2>
             <p className="mt-4 text-lg text-slate-600">
               Built for real-world bookkeeping in Lebanon: multilingual data, messy spreadsheets, and fast answers.
             </p>
@@ -289,7 +289,7 @@ export default function HomePage() {
         <div className="mx-auto max-w-4xl px-4 py-20 text-center">
           <h2 className="text-3xl font-bold">Ready to simplify your accounting?</h2>
           <p className="mt-4 text-lg text-slate-600">
-            Join 100+ Lebanese SMBs already using Hissabi to save time and make better decisions.
+            Join 100+ Lebanese SMBs already using Hisabi to save time and make better decisions.
           </p>
           <Link
             href="/login"
@@ -312,7 +312,7 @@ export default function HomePage() {
                 <span className="text-slate-900 font-bold text-lg">H</span>
               </div>
               <div>
-                <span className="font-semibold">Hissabi</span>
+                <span className="font-semibold">Hisabi</span>
                 <span className="block text-xs text-slate-400">SMB Accounting for Lebanon</span>
               </div>
             </div>
@@ -321,7 +321,7 @@ export default function HomePage() {
               <a href="#" className="hover:text-white transition-colors">Terms</a>
               <a href="#" className="hover:text-white transition-colors">Contact</a>
             </div>
-            <span className="text-sm text-slate-400">© {new Date().getFullYear()} Hissabi</span>
+            <span className="text-sm text-slate-400">© {new Date().getFullYear()} Hisabi</span>
           </div>
         </div>
       </footer>

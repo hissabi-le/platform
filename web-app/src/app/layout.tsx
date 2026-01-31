@@ -24,14 +24,14 @@ export const viewport: Viewport = {
 
 export const metadata: Metadata = {
   title: {
-    default: "Hissabi | SMB Accounting for Lebanon",
-    template: "%s | Hissabi",
+    default: "Hisabi | SMB Accounting for Lebanon",
+    template: "%s | Hisabi",
   },
   description: "AI-powered accounting that speaks your language. Upload documents, get balance sheets, P&L, and inventory reports in seconds.",
   keywords: ["accounting", "SMB", "Lebanon", "bookkeeping", "financial statements", "inventory", "P&L", "balance sheet"],
-  authors: [{ name: "Hissabi" }],
-  creator: "Hissabi",
-  publisher: "Hissabi",
+  authors: [{ name: "Hisabi" }],
+  creator: "Hisabi",
+  publisher: "Hisabi",
   robots: {
     index: true,
     follow: true,
@@ -39,14 +39,14 @@ export const metadata: Metadata = {
   openGraph: {
     type: "website",
     locale: "en_US",
-    url: "https://hissabi.com",
-    siteName: "Hissabi",
-    title: "Hissabi | SMB Accounting for Lebanon",
+    url: "https://hisabi.com",
+    siteName: "Hisabi",
+    title: "Hisabi | SMB Accounting for Lebanon",
     description: "AI-powered accounting that speaks your language. Upload documents, get balance sheets, P&L, and inventory reports in seconds.",
   },
   twitter: {
     card: "summary_large_image",
-    title: "Hissabi | SMB Accounting for Lebanon",
+    title: "Hisabi | SMB Accounting for Lebanon",
     description: "AI-powered accounting that speaks your language.",
   },
   icons: {

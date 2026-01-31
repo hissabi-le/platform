@@ -409,7 +409,7 @@ Today's date: {datetime.utcnow().strftime('%Y-%m-%d')}
                 {"role": "user", "content": user_prompt}
             ],
             temperature=0.1,
-            max_tokens=8000,  # Increased for larger documents
+            max_completion_tokens=10000,  # Increased for larger documents, renamed for o-series models
         )
         
         content = response.choices[0].message.content or ""

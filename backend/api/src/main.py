@@ -65,7 +65,7 @@ _cors_origins = list(settings.cors_origins)  # From CORS_ORIGINS env var
 
 # Add Railway production URLs
 _cors_origins.extend([
-    "https://cheerful-caring-production.up.railway.app",
+    "https://cheerful-caring-production-f759.up.railway.app",
     "https://hissabi.com",
     "https://www.hissabi.com",
 ])

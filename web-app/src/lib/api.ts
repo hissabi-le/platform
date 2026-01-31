@@ -1,20 +1,13 @@
 // src/lib/api.ts
 import { AUTH_TOKEN_KEY, API_ENDPOINTS, EVENTS } from "./constants";
 
-// Use env var if set, otherwise fallback based on environment
-const getApiBaseUrl = () => {
-  if (process.env.NEXT_PUBLIC_API_BASE_URL) {
-    return process.env.NEXT_PUBLIC_API_BASE_URL;
-  }
-  // In browser, check if we're on Railway production
-  if (typeof window !== 'undefined' && window.location.hostname.includes('railway.app')) {
-    return 'https://splendid-light-production.up.railway.app';
-  }
-  // Default for local development
-  return 'http://localhost:8000';
-};
+// Production API URL - use localhost only for local development
+export const API_BASE_URL =
+  process.env.NEXT_PUBLIC_API_BASE_URL ||
+  (process.env.NODE_ENV === 'development'
+    ? 'http://localhost:8000'
+    : 'https://splendid-light-production.up.railway.app');
 
-export const API_BASE_URL = getApiBaseUrl();
 
 export type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 

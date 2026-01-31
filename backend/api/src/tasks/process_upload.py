@@ -179,7 +179,7 @@ Key observations: [what you noticed]
 [Your reasoning for each section/row]
 ```
 
-Then output metadata line:
+Then output metadata line in exactly this format:
 ```
 ---METADATA---
 AMBIGUOUS_DATES=yes|no
@@ -187,7 +187,7 @@ DETECTED_CURRENCY=USD|LBP|EUR|etc
 DOCUMENT_TYPE=sales_log|expense_tracker|invoice|bank_statement|inventory|ar_aging|ap_aging|mixed
 ```
 
-Then output transactions:
+Then output transactions in exactly this format:
 ```
 ---TRANSACTIONS---
 DATE|DESCRIPTION|AMOUNT|CATEGORY|CURRENCY|PAYMENT_STATUS|IS_AR|IS_AP|ITEM_NAME|QUANTITY|UNIT
@@ -201,7 +201,7 @@ Field rules:
 - IS_AP: "yes" if this is money owed BY business (unpaid expense)
 - Use | delimiter, empty fields = blank
 
-Example output:
+Example output (FOLLOW EXACTLY):
 ---METADATA---
 AMBIGUOUS_DATES=no
 DETECTED_CURRENCY=USD
@@ -402,26 +402,49 @@ Today's date: {datetime.utcnow().strftime('%Y-%m-%d')}
 CRITICAL INSTRUCTION: You MUST start your response with "ANALYSIS:", then "---METADATA---", then "---TRANSACTIONS---". Do not wrap the output in markdown code blocks.
 """
     
+    # Try o3-mini first (Reasoning model)
     try:
-        # Use o3-mini reasoning model for complex accounting analysis
+        logger.info("Attempting AI ingestion with o3-mini...")
         response = llm.client.chat.completions.create(
             model="o3-mini",
             messages=[
                 {"role": "system", "content": AI_INGESTION_SYSTEM_PROMPT},
                 {"role": "user", "content": user_prompt}
             ],
-            # temperature=0.1, # Not supported in o3-mini
-            max_completion_tokens=10000,  # Increased for larger documents, renamed for o-series models
+            max_completion_tokens=10000,
         )
-        
         content = response.choices[0].message.content or ""
-        
-        # Parse the response using chain-of-thought output format
-        return _parse_ai_response(content)
-        
+        result = _parse_ai_response(content)
+        if result:
+            logger.info("o3-mini ingestion successful")
+            return result
+        logger.warning("o3-mini returned invalid format, falling back to gpt-4o")
     except Exception as e:
-        logger.exception("AI ingestion failed with error: %s", e)
-        return None
+        logger.exception("o3-mini ingestion failed: %s", e)
+        logger.info("Falling back to gpt-4o...")
+
+    # Fallback to gpt-4o (Standard model)
+    try:
+        logger.info("Attempting AI ingestion with gpt-4o...")
+        response = llm.client.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {"role": "system", "content": AI_INGESTION_SYSTEM_PROMPT},
+                {"role": "user", "content": user_prompt}
+            ],
+            temperature=0.1,
+            max_tokens=4000,
+        )
+        content = response.choices[0].message.content or ""
+        result = _parse_ai_response(content)
+        if result:
+            logger.info("gpt-4o ingestion successful")
+            return result
+        logger.warning("gpt-4o returned invalid format")
+    except Exception as e:
+        logger.exception("gpt-4o ingestion failed: %s", e)
+
+    return None
 
 
 def _parse_ai_response(content: str) -> Optional[list[dict[str, Any]]]:

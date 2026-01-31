@@ -43,5 +43,5 @@ RUN pip install --no-cache-dir \
 COPY src       src
 COPY alembic   alembic
 
-# default command
-CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Railway injects PORT dynamically - use shell form to support variable expansion
+CMD uvicorn src.main:app --host 0.0.0.0 --port ${PORT:-8000}

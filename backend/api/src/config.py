@@ -3,7 +3,7 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import List, Literal, Sequence
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, computed_field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -38,17 +38,29 @@ class Settings(BaseSettings):
     s3_secret_access_key: str | None = Field(default=None, alias="S3_SECRET_ACCESS_KEY")
 
     upload_max_mb: int = Field(default=25, alias="UPLOAD_MAX_MB")
-    allowed_mime_types: List[str] = Field(
-        default_factory=lambda: [
-            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            "application/vnd.ms-excel",
-            "text/csv",
-            "application/pdf",
-        ],
+    
+    # Store as string to avoid pydantic-settings JSON parsing issues
+    _allowed_mime_types_raw: str = Field(
+        default="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv,application/pdf",
         alias="ALLOWED_MIME_TYPES",
     )
+    
+    # Store as string to avoid pydantic-settings JSON parsing issues
+    _cors_origins_raw: str = Field(default="http://localhost:3000", alias="CORS_ORIGINS")
 
-    cors_origins: List[str] = Field(default_factory=lambda: ["http://localhost:3000"], alias="CORS_ORIGINS")
+    @property
+    def cors_origins(self) -> List[str]:
+        """Parse CORS_ORIGINS from comma-separated string."""
+        if not self._cors_origins_raw:
+            return ["http://localhost:3000"]
+        return [part.strip() for part in self._cors_origins_raw.split(",") if part.strip()]
+
+    @property
+    def allowed_mime_types(self) -> List[str]:
+        """Parse ALLOWED_MIME_TYPES from comma-separated string."""
+        if not self._allowed_mime_types_raw:
+            return ["application/pdf", "text/csv"]
+        return [part.strip() for part in self._allowed_mime_types_raw.split(",") if part.strip()]
 
     jwt_secret: str = Field(default="change-me", alias="JWT_SECRET")
     jwt_issuer: str = Field(default="hissabi", alias="JWT_ISSUER")
@@ -75,15 +87,6 @@ class Settings(BaseSettings):
     feature_inventory_enabled: bool = Field(default=False, alias="FEATURE_INVENTORY_ENABLED")
     feature_recipes_enabled: bool = Field(default=False, alias="FEATURE_RECIPES_ENABLED")
 
-    @field_validator("allowed_mime_types", "cors_origins", mode="before")
-    @classmethod
-    def _split_csv(cls, value: Sequence[str] | str | None) -> List[str]:
-        if value is None or value == "":
-            return ["http://localhost:3000"]  # Safe default
-        if isinstance(value, str):
-            return [part.strip() for part in value.split(",") if part.strip()]
-        return list(value)
-
     @field_validator("sqlalchemy_echo", mode="before")
     @classmethod
     def _coerce_bool(cls, value: bool | str | int) -> bool:
@@ -103,3 +106,4 @@ def get_settings() -> Settings:
 
 
 settings = get_settings()
+

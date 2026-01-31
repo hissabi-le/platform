@@ -27,6 +27,13 @@ COPY . .
 # Uncomment the following line in case you want to disable telemetry during the build.
 ENV NEXT_TELEMETRY_DISABLED=1
 
+# Build-time environment variables for Next.js
+# These get baked into the client-side bundle
+ARG NEXT_PUBLIC_API_BASE_URL
+ARG NEXT_PUBLIC_API_URL
+ENV NEXT_PUBLIC_API_BASE_URL=${NEXT_PUBLIC_API_BASE_URL}
+ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
+
 RUN \
     if [ -f pnpm-lock.yaml ]; then corepack enable pnpm && pnpm run build; \
     elif [ -f yarn.lock ]; then yarn run build; \

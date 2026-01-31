@@ -121,7 +121,7 @@ export default function JournalPage() {
           const resolution: Record<string, unknown> = {
             entry_id: item.entry_id,
           };
-          (item.treat_as_inventory) {
+          if (item.treat_as_inventory) {
             resolution.treat_as_inventory = item.treat_as_inventory === "inventory";
           }
           if (item.quantity && item.quantity.trim()) {

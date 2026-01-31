@@ -408,7 +408,7 @@ Today's date: {datetime.utcnow().strftime('%Y-%m-%d')}
                 {"role": "system", "content": AI_INGESTION_SYSTEM_PROMPT},
                 {"role": "user", "content": user_prompt}
             ],
-            temperature=0.1,
+            # temperature=0.1, # Not supported in o3-mini
             max_completion_tokens=10000,  # Increased for larger documents, renamed for o-series models
         )
         

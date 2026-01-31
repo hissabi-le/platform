@@ -398,6 +398,8 @@ Please thoroughly analyze this document:
 5. Identify any AR (receivables) or AP (payables) entries
 
 Today's date: {datetime.utcnow().strftime('%Y-%m-%d')}
+
+CRITICAL INSTRUCTION: You MUST start your response with "ANALYSIS:", then "---METADATA---", then "---TRANSACTIONS---". Do not wrap the output in markdown code blocks.
 """
     
     try:
@@ -434,7 +436,7 @@ def _parse_ai_response(content: str) -> Optional[list[dict[str, Any]]]:
         List of transaction dicts with proper AR/AP flags and payment status.
     """
     if "---TRANSACTIONS---" not in content:
-        logger.warning("AI response missing TRANSACTIONS delimiter")
+        logger.warning("AI response missing TRANSACTIONS delimiter. Raw content start: %s", content[:1000])
         return None
     
     # Parse metadata section if present

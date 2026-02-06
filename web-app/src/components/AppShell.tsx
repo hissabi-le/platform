@@ -45,8 +45,14 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     //   const insertIndex = result.findIndex(l => l.href === inventoryLink.insertAfter) + 1;
     //   result.splice(insertIndex, 0, { href: inventoryLink.href, label: inventoryLink.label, icon: inventoryLink.icon, info: inventoryLink.info });
     // }
+
+    // Filter for Personal Plan
+    if (user?.plan === "personal") {
+      return result.filter((l) => l.href === "/app/personal" || l.href.startsWith("/app/settings"));
+    }
+
     return result;
-  }, [features?.inventory_enabled]);
+  }, [features?.inventory_enabled, user?.plan]);
 
   useEffect(() => {
     setMounted(true);

@@ -376,3 +376,218 @@ class PersonalRepo:
             }
             for b in budgets
         ]
+
+    # ==================== The Flow (Sankey) ====================
+
+    async def get_flow_data(
+        self,
+        session: AsyncSession,
+        user_id: int,
+        start_date: date,
+        end_date: date,
+    ) -> Dict[str, Any]:
+        """Generate Sankey diagram data: Income → Category → Merchant."""
+        # Get income totals
+        income_stmt = select(
+            func.sum(PersonalEntry.amount).label("total"),
+        ).where(
+            and_(
+                PersonalEntry.user_id == user_id,
+                PersonalEntry.entry_type == "income",
+                PersonalEntry.entry_date >= start_date,
+                PersonalEntry.entry_date <= end_date,
+            )
+        )
+        income_result = await session.execute(income_stmt)
+        total_income = float(income_result.scalar() or 0)
+
+        # Get expense by category
+        category_stmt = select(
+            PersonalEntry.category,
+            func.sum(PersonalEntry.amount).label("total"),
+        ).where(
+            and_(
+                PersonalEntry.user_id == user_id,
+                PersonalEntry.entry_type == "expense",
+                PersonalEntry.entry_date >= start_date,
+                PersonalEntry.entry_date <= end_date,
+            )
+        ).group_by(PersonalEntry.category).order_by(desc("total"))
+
+        category_result = await session.execute(category_stmt)
+        categories = category_result.all()
+
+        # Get expense by category + vendor
+        vendor_stmt = select(
+            PersonalEntry.category,
+            PersonalEntry.vendor,
+            func.sum(PersonalEntry.amount).label("total"),
+        ).where(
+            and_(
+                PersonalEntry.user_id == user_id,
+                PersonalEntry.entry_type == "expense",
+                PersonalEntry.entry_date >= start_date,
+                PersonalEntry.entry_date <= end_date,
+                PersonalEntry.vendor.isnot(None),
+            )
+        ).group_by(PersonalEntry.category, PersonalEntry.vendor).order_by(desc("total")).limit(20)
+
+        vendor_result = await session.execute(vendor_stmt)
+        vendors = vendor_result.all()
+
+        # Build nodes and links for Sankey
+        nodes = [{"id": "income", "label": "Income", "value": total_income}]
+        links = []
+
+        # Add category nodes and income→category links
+        for cat in categories:
+            cat_id = f"cat_{cat.category}"
+            nodes.append({"id": cat_id, "label": cat.category, "value": float(cat.total)})
+            links.append({
+                "source": "income",
+                "target": cat_id,
+                "value": float(cat.total),
+            })
+
+        # Add vendor nodes and category→vendor links
+        seen_vendors = set()
+        for v in vendors:
+            if v.vendor:
+                vendor_id = f"vendor_{v.vendor[:20]}"
+                if vendor_id not in seen_vendors:
+                    nodes.append({"id": vendor_id, "label": v.vendor[:20], "value": float(v.total)})
+                    seen_vendors.add(vendor_id)
+                links.append({
+                    "source": f"cat_{v.category}",
+                    "target": vendor_id,
+                    "value": float(v.total),
+                })
+
+        return {
+            "nodes": nodes,
+            "links": links,
+            "total_income": total_income,
+            "total_expense": sum(float(c.total) for c in categories),
+        }
+
+    # ==================== Merchant DNA ====================
+
+    async def get_top_merchants(
+        self,
+        session: AsyncSession,
+        user_id: int,
+        limit: int = 10,
+    ) -> List[Dict[str, Any]]:
+        """Get top merchants by total spend."""
+        stmt = select(
+            PersonalEntry.vendor,
+            func.sum(PersonalEntry.amount).label("total"),
+            func.count(PersonalEntry.id).label("count"),
+            func.min(PersonalEntry.entry_date).label("first_visit"),
+            func.max(PersonalEntry.entry_date).label("last_visit"),
+        ).where(
+            and_(
+                PersonalEntry.user_id == user_id,
+                PersonalEntry.entry_type == "expense",
+                PersonalEntry.vendor.isnot(None),
+            )
+        ).group_by(PersonalEntry.vendor).order_by(desc("total")).limit(limit)
+
+        result = await session.execute(stmt)
+        return [
+            {
+                "vendor": row.vendor,
+                "total_spend": float(row.total),
+                "visit_count": row.count,
+                "first_visit": row.first_visit.isoformat() if row.first_visit else None,
+                "last_visit": row.last_visit.isoformat() if row.last_visit else None,
+                "avg_order": round(float(row.total) / row.count, 2) if row.count > 0 else 0,
+            }
+            for row in result.all()
+        ]
+
+    async def get_merchant_profile(
+        self,
+        session: AsyncSession,
+        user_id: int,
+        vendor: str,
+    ) -> Optional[Dict[str, Any]]:
+        """Get detailed profile for a specific merchant."""
+        # Basic stats
+        stats_stmt = select(
+            func.sum(PersonalEntry.amount).label("total"),
+            func.count(PersonalEntry.id).label("count"),
+            func.avg(PersonalEntry.amount).label("avg"),
+            func.min(PersonalEntry.entry_date).label("first_visit"),
+            func.max(PersonalEntry.entry_date).label("last_visit"),
+        ).where(
+            and_(
+                PersonalEntry.user_id == user_id,
+                PersonalEntry.vendor == vendor,
+            )
+        )
+
+        stats_result = await session.execute(stats_stmt)
+        stats = stats_result.one_or_none()
+
+        if not stats or not stats.total:
+            return None
+
+        # Day of week frequency
+        dow_stmt = select(
+            func.extract("dow", PersonalEntry.entry_date).label("dow"),
+            func.count(PersonalEntry.id).label("count"),
+        ).where(
+            and_(
+                PersonalEntry.user_id == user_id,
+                PersonalEntry.vendor == vendor,
+            )
+        ).group_by("dow")
+
+        dow_result = await session.execute(dow_stmt)
+        dow_data = {int(row.dow): row.count for row in dow_result.all()}
+        days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+        frequency_by_day = [{"day": days[i], "count": dow_data.get(i, 0)} for i in range(7)]
+
+        # Monthly trend (last 6 months)
+        six_months_ago = date.today() - timedelta(days=180)
+        trend_stmt = select(
+            func.date_trunc("month", PersonalEntry.entry_date).label("month"),
+            func.sum(PersonalEntry.amount).label("total"),
+            func.avg(PersonalEntry.amount).label("avg"),
+        ).where(
+            and_(
+                PersonalEntry.user_id == user_id,
+                PersonalEntry.vendor == vendor,
+                PersonalEntry.entry_date >= six_months_ago,
+            )
+        ).group_by("month").order_by("month")
+
+        trend_result = await session.execute(trend_stmt)
+        price_trend = [
+            {
+                "month": row.month.strftime("%Y-%m"),
+                "total": float(row.total),
+                "avg": round(float(row.avg), 2),
+            }
+            for row in trend_result.all()
+        ]
+
+        # Calculate visit frequency
+        if stats.first_visit and stats.last_visit:
+            days_span = (stats.last_visit - stats.first_visit).days or 1
+            visits_per_week = (stats.count / days_span) * 7
+        else:
+            visits_per_week = 0
+
+        return {
+            "vendor": vendor,
+            "lifetime_spend": float(stats.total),
+            "visit_count": stats.count,
+            "average_order": round(float(stats.avg), 2),
+            "first_visit": stats.first_visit.isoformat() if stats.first_visit else None,
+            "last_visit": stats.last_visit.isoformat() if stats.last_visit else None,
+            "visits_per_week": round(visits_per_week, 1),
+            "frequency_by_day": frequency_by_day,
+            "price_trend": price_trend,
+        }

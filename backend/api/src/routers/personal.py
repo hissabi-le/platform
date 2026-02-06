@@ -506,3 +506,54 @@ async def list_categories():
         "other": ["transportation", "healthcare", "education", "travel", "gifts", "other"],
     }
     return categories
+
+
+# ==================== The Flow (Sankey) ====================
+
+@router.get("/analytics/flow")
+async def get_flow_data(
+    start_date: Optional[date] = None,
+    end_date: Optional[date] = None,
+    auth: AuthContext = Depends(require_plan("personal")),
+    session: AsyncSession = Depends(get_db),
+):
+    """Get Sankey diagram data showing money flow: Income → Category → Merchant."""
+    if not end_date:
+        end_date = date.today()
+    if not start_date:
+        start_date = date(end_date.year, end_date.month, 1)
+
+    flow_data = await personal_repo.get_flow_data(
+        session, auth.user.id, start_date, end_date
+    )
+    return {
+        "start_date": start_date.isoformat(),
+        "end_date": end_date.isoformat(),
+        **flow_data,
+    }
+
+
+# ==================== Merchant DNA ====================
+
+@router.get("/merchants")
+async def get_top_merchants(
+    limit: int = 10,
+    auth: AuthContext = Depends(require_plan("personal")),
+    session: AsyncSession = Depends(get_db),
+):
+    """Get top merchants by total spend."""
+    merchants = await personal_repo.get_top_merchants(session, auth.user.id, limit)
+    return {"merchants": merchants}
+
+
+@router.get("/merchants/{vendor}")
+async def get_merchant_profile(
+    vendor: str,
+    auth: AuthContext = Depends(require_plan("personal")),
+    session: AsyncSession = Depends(get_db),
+):
+    """Get detailed profile for a specific merchant (Merchant DNA)."""
+    profile = await personal_repo.get_merchant_profile(session, auth.user.id, vendor)
+    if not profile:
+        raise HTTPException(status_code=404, detail="No transactions found for this merchant")
+    return profile

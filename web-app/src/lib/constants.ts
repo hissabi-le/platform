@@ -34,11 +34,14 @@ export const API_ENDPOINTS = {
         BY_CATEGORY: "/personal/analytics/by-category",
         TRENDS: "/personal/analytics/trends",
         TOP_SPENDING: "/personal/analytics/top-spending",
+        FLOW: "/personal/analytics/flow",
         INSIGHTS: "/personal/insights",
         BUDGETS: "/personal/budgets",
         BUDGET_PROGRESS: "/personal/budgets/progress",
         CHAT: "/personal/chat",
         CATEGORIES: "/personal/categories",
+        MERCHANTS: "/personal/merchants",
+        MERCHANT: (vendor: string) => `/personal/merchants/${encodeURIComponent(vendor)}`,
     },
 } as const;
 

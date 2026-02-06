@@ -380,6 +380,23 @@ export const api = {
 
     // Categories
     getCategories: () => fetchJson<Record<string, string[]>>(API_ENDPOINTS.PERSONAL.CATEGORIES),
+
+    // The Flow (Sankey)
+    getFlowData: (startDate?: string, endDate?: string) => {
+      const query = new URLSearchParams();
+      if (startDate) query.set("start_date", startDate);
+      if (endDate) query.set("end_date", endDate);
+      const queryStr = query.toString() ? `?${query.toString()}` : "";
+      return fetchJson<FlowData>(`${API_ENDPOINTS.PERSONAL.FLOW}${queryStr}`);
+    },
+
+    // Merchant DNA
+    getTopMerchants: (limit?: number) => {
+      const query = limit ? `?limit=${limit}` : "";
+      return fetchJson<{ merchants: MerchantSummary[] }>(`${API_ENDPOINTS.PERSONAL.MERCHANTS}${query}`);
+    },
+    getMerchantProfile: (vendor: string) =>
+      fetchJson<MerchantProfile>(API_ENDPOINTS.PERSONAL.MERCHANT(vendor)),
   },
 };
 
@@ -472,3 +489,59 @@ export type BudgetProgress = {
   percent_used: number;
 };
 
+// -------- Flow (Sankey) Types --------
+
+export type FlowNode = {
+  id: string;
+  label: string;
+  value: number;
+};
+
+export type FlowLink = {
+  source: string;
+  target: string;
+  value: number;
+};
+
+export type FlowData = {
+  start_date: string;
+  end_date: string;
+  nodes: FlowNode[];
+  links: FlowLink[];
+  total_income: number;
+  total_expense: number;
+};
+
+// -------- Merchant DNA Types --------
+
+export type MerchantSummary = {
+  vendor: string;
+  total_spend: number;
+  visit_count: number;
+  first_visit: string | null;
+  last_visit: string | null;
+  avg_order: number;
+};
+
+export type FrequencyByDay = {
+  day: string;
+  count: number;
+};
+
+export type PriceTrend = {
+  month: string;
+  total: number;
+  avg: number;
+};
+
+export type MerchantProfile = {
+  vendor: string;
+  lifetime_spend: number;
+  visit_count: number;
+  average_order: number;
+  first_visit: string | null;
+  last_visit: string | null;
+  visits_per_week: number;
+  frequency_by_day: FrequencyByDay[];
+  price_trend: PriceTrend[];
+};

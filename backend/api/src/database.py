@@ -85,7 +85,7 @@ if settings.database_url.startswith("sqlite+aiosqlite:///:memory:"):
 # ------------------------------------------------------------------
 # Connection tuning per dialect
 # ------------------------------------------------------------------
-@event.listens_for(engine.sync_engine, "connect")
+# @event.listens_for(engine.sync_engine, "connect")
 def _on_connect(dbapi_conn, _):  # pragma: no cover (integration behavior)
     try:
         cur = dbapi_conn.cursor()

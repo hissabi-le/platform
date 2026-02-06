@@ -37,6 +37,7 @@ export default function TransactionsPage() {
     const createMutation = useMutation({
         mutationFn: () => api.personal.createEntry({
             ...formData,
+            entry_date: formData.entry_date || new Date().toISOString().split("T")[0],
             amount: parseFloat(formData.amount),
         }),
         onSuccess: () => {
@@ -146,7 +147,7 @@ export default function TransactionsPage() {
                                 onChange={e => setFormData({ ...formData, category: e.target.value })}
                                 className="w-full px-4 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white focus:outline-none focus:border-cyan-500"
                             >
-                                {categories ? Object.keys(categories).flatMap(group => categories[group]).map((cat: string) => (
+                                {categories ? Object.keys(categories).flatMap(group => (categories[group] || [])).map((cat: string) => (
                                     <option key={cat} value={cat}>{cat}</option>
                                 )) : <option value="other">Other</option>}
                                 <option value="salary">Salary</option>

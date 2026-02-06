@@ -159,7 +159,7 @@ async def documents_upload(
     auth: AuthContext = Depends(require_plan("documents")),
     db: AsyncSession = Depends(get_db),
 ):
-    doc = await _persist_uploaded_document(file, auth, db, upload_id=upload.id)
+    doc = await _persist_uploaded_document(file, auth, db)
     await db.commit()
     return {"document_id": doc.id}
 

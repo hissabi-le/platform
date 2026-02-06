@@ -12,7 +12,7 @@ const baseLinks = [
   { href: "/app/upload", label: "Upload", icon: "📤", info: "Send spreadsheets or statements into Hisabi." },
   { href: "/app/documents", label: "Documents", icon: "📄", info: "Browse and download generated reports." },
   { href: "/app/journal", label: "Journal", icon: "📝", info: "Log day-to-day notes when away from spreadsheets." },
-  { href: "/app/personal", label: "Personal", icon: "💰", info: "Track personal expenses, set budgets, and get AI insights." },
+  { href: "/personal", label: "Personal", icon: "💰", info: "Track personal expenses, set budgets, and get AI insights." },
   { href: "/app/receivables", label: "Receivables", icon: "💳", info: "Track money owed to you and money you owe." },
   { href: "/app/analytics", label: "Analytics", icon: "📈", info: "Visualise revenue, expenses, margins, and trends." },
   { href: "/app/settings/billing", label: "Settings", icon: "⚙️", info: "Manage plan, invoices, and payment methods." },
@@ -48,7 +48,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
     // Filter for Personal Plan
     if (user?.plan === "personal") {
-      return result.filter((l) => l.href === "/app/personal" || l.href.startsWith("/app/settings"));
+      return result.filter((l) => l.href === "/personal" || l.href.startsWith("/app/settings"));
     }
 
     return result;

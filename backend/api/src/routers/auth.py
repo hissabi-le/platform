@@ -42,7 +42,10 @@ async def _get_plan(session: AsyncSession, org_id: int) -> str | None:
     # 2. Fallback to any subscription
     stmt = select(Subscription).where(Subscription.org_id == org_id)
     sub = await session.scalar(stmt)
-    return sub.plan if sub else None
+    if sub:
+        return sub.plan
+    # Personal mode is available without an active subscription.
+    return "personal"
 
 
 @router.post("/register", response_model=AuthResponse, status_code=status.HTTP_201_CREATED)

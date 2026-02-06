@@ -119,6 +119,7 @@ FEATURE_MATRIX: dict[str, set[str]] = {
     "starter": {"documents", "inventory", "analytics_basic", "personal"},
     "pro": {"documents", "inventory", "analytics_basic", "analytics_advanced", "assistant", "personal"},
     "enterprise": {"documents", "inventory", "analytics_basic", "analytics_advanced", "assistant", "api", "personal"},
+    "personal": {"personal"},
 }
 
 
@@ -217,19 +218,24 @@ async def current_user_with_active_subscription(
         if cached_status in {"active", "trialing"} and plan:
             auth.subscription_plan = plan
             return auth
-        elif cached_status:
-            raise HTTPException(status_code=status.HTTP_402_PAYMENT_REQUIRED, detail="Subscription required")
+        if cached_status:
+            # No active subscription -> allow personal-only mode.
+            auth.subscription_plan = "personal"
+            return auth
 
     sub_stmt = select(Subscription).where(
         Subscription.org_id == auth.user.org_id,
         Subscription.status.in_(("active", "trialing")),
     )
     sub = await session.scalar(sub_stmt)
-    if not sub:
-        await subscription_cache.set(auth.user.org_id, {"status": "inactive"})
-        raise HTTPException(status_code=status.HTTP_402_PAYMENT_REQUIRED, detail="Subscription required")
-    auth.subscription_plan = sub.plan
-    await subscription_cache.set(auth.user.org_id, {"status": sub.status, "plan": sub.plan})
+    if sub:
+        auth.subscription_plan = sub.plan
+        await subscription_cache.set(auth.user.org_id, {"status": sub.status, "plan": sub.plan})
+        return auth
+
+    # Allow personal endpoints while keeping paid/business features behind require_plan.
+    auth.subscription_plan = "personal"
+    await subscription_cache.set(auth.user.org_id, {"status": "personal", "plan": "personal"})
     return auth
 
 

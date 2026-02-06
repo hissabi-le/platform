@@ -91,7 +91,7 @@ export default function MerchantsPage() {
                             {merchants.slice(0, 3).map((merchant, index) => (
                                 <Link
                                     key={merchant.vendor}
-                                    href={`/app/personal/merchants/${encodeURIComponent(merchant.vendor)}`}
+                                    href={`/personal/merchants/${encodeURIComponent(merchant.vendor)}`}
                                     className="group"
                                 >
                                     <div
@@ -138,7 +138,7 @@ export default function MerchantsPage() {
                                 {merchants.slice(3).map((merchant, index) => (
                                     <Link
                                         key={merchant.vendor}
-                                        href={`/app/personal/merchants/${encodeURIComponent(merchant.vendor)}`}
+                                        href={`/personal/merchants/${encodeURIComponent(merchant.vendor)}`}
                                         className="flex items-center p-4 hover:bg-slate-800/50 transition-colors group"
                                     >
                                         <div className="w-8 text-center text-slate-500 font-mono text-sm">

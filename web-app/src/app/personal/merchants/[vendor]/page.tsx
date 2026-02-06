@@ -57,7 +57,7 @@ export default function MerchantDNAPage() {
             <div className="max-w-4xl mx-auto">
                 {/* Back Button */}
                 <Link
-                    href="/app/personal/merchants"
+                    href="/personal/merchants"
                     className="inline-flex items-center gap-2 text-slate-400 hover:text-white transition-colors mb-6"
                 >
                     <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">

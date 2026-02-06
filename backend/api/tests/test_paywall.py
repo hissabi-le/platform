@@ -36,6 +36,11 @@ async def protected(_: User = Depends(require_plan("assistant"))):
     return {"ok": True}
 
 
+@app.get("/personal-protected")
+async def personal_protected(_: User = Depends(require_plan("personal"))):
+    return {"ok": True}
+
+
 client = TestClient(app)
 
 
@@ -86,4 +91,10 @@ def test_require_plan_denies_without_feature():
 def test_require_plan_allows_when_feature_available():
     user = asyncio.run(_create_user_with_plan(plan="pro"))
     response = client.get("/protected", headers=_auth_header_for(user))
+    assert response.status_code == 200
+
+
+def test_require_plan_allows_personal_without_subscription():
+    user = asyncio.run(_create_user_with_plan(plan=None))
+    response = client.get("/personal-protected", headers=_auth_header_for(user))
     assert response.status_code == 200

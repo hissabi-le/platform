@@ -99,7 +99,7 @@ export default function PersonalBudgetsPage() {
                         {showForm ? "Cancel" : "+ Add Budget"}
                     </button>
                     <Link
-                        href="/app/personal"
+                        href="/personal"
                         className="px-4 py-2 bg-secondary rounded-lg text-sm font-medium hover:bg-secondary/80 transition-colors"
                     >
                         ← Back

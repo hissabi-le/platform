@@ -296,4 +296,179 @@ export const api = {
     resolve: (dayId: number, body: { resolutions: Array<Record<string, unknown>> }) =>
       fetchJson<JournalDayResponse>(API_ENDPOINTS.JOURNAL.RESOLVE(dayId), { method: "PATCH", body }),
   },
+
+  personal: {
+    // Entries CRUD
+    createEntry: (data: PersonalEntryInput) =>
+      fetchJson<PersonalEntry>(API_ENDPOINTS.PERSONAL.ENTRIES, { method: "POST", body: data }),
+    listEntries: (params?: { start_date?: string; end_date?: string; category?: string; entry_type?: string }) => {
+      const query = new URLSearchParams();
+      if (params?.start_date) query.set("start_date", params.start_date);
+      if (params?.end_date) query.set("end_date", params.end_date);
+      if (params?.category) query.set("category", params.category);
+      if (params?.entry_type) query.set("entry_type", params.entry_type);
+      const queryStr = query.toString() ? `?${query.toString()}` : "";
+      return fetchJson<PersonalEntry[]>(`${API_ENDPOINTS.PERSONAL.ENTRIES}${queryStr}`);
+    },
+    getEntry: (id: number) => fetchJson<PersonalEntry>(API_ENDPOINTS.PERSONAL.ENTRY(id)),
+    updateEntry: (id: number, data: Partial<PersonalEntryInput>) =>
+      fetchJson<PersonalEntry>(API_ENDPOINTS.PERSONAL.ENTRY(id), { method: "PUT", body: data }),
+    deleteEntry: (id: number) =>
+      fetchJson<{ ok: boolean }>(API_ENDPOINTS.PERSONAL.ENTRY(id), { method: "DELETE" }),
+
+    // AI Parsing
+    parseText: (text: string, default_date?: string) =>
+      fetchJson<ParsedPersonalEntry[]>(API_ENDPOINTS.PERSONAL.PARSE, {
+        method: "POST",
+        body: { text, default_date },
+      }),
+    parseAndSave: (text: string, default_date?: string) =>
+      fetchJson<PersonalEntry[]>(API_ENDPOINTS.PERSONAL.PARSE_SAVE, {
+        method: "POST",
+        body: { text, default_date },
+      }),
+
+    // Analytics
+    getSummary: (start_date?: string, end_date?: string) => {
+      const query = new URLSearchParams();
+      if (start_date) query.set("start_date", start_date);
+      if (end_date) query.set("end_date", end_date);
+      const queryStr = query.toString() ? `?${query.toString()}` : "";
+      return fetchJson<PersonalSummary>(`${API_ENDPOINTS.PERSONAL.SUMMARY}${queryStr}`);
+    },
+    getCategoryBreakdown: (start_date?: string, end_date?: string, entry_type?: string) => {
+      const query = new URLSearchParams();
+      if (start_date) query.set("start_date", start_date);
+      if (end_date) query.set("end_date", end_date);
+      if (entry_type) query.set("entry_type", entry_type);
+      const queryStr = query.toString() ? `?${query.toString()}` : "";
+      return fetchJson<{ breakdown: CategoryBreakdown[] }>(`${API_ENDPOINTS.PERSONAL.BY_CATEGORY}${queryStr}`);
+    },
+    getTrends: (months?: number) => {
+      const query = months ? `?months=${months}` : "";
+      return fetchJson<{ trends: MonthlyTrend[] }>(`${API_ENDPOINTS.PERSONAL.TRENDS}${query}`);
+    },
+    getTopSpending: (days?: number, category?: string, limit?: number) => {
+      const query = new URLSearchParams();
+      if (days) query.set("days", String(days));
+      if (category) query.set("category", category);
+      if (limit) query.set("limit", String(limit));
+      const queryStr = query.toString() ? `?${query.toString()}` : "";
+      return fetchJson<{ days: number; category: string | null; items: TopSpendingItem[] }>(
+        `${API_ENDPOINTS.PERSONAL.TOP_SPENDING}${queryStr}`
+      );
+    },
+    getInsights: () => fetchJson<PersonalInsights>(API_ENDPOINTS.PERSONAL.INSIGHTS),
+
+    // Budgets
+    listBudgets: () => fetchJson<PersonalBudget[]>(API_ENDPOINTS.PERSONAL.BUDGETS),
+    createBudget: (category: string, monthly_limit: number) =>
+      fetchJson<PersonalBudget>(API_ENDPOINTS.PERSONAL.BUDGETS, {
+        method: "POST",
+        body: { category, monthly_limit },
+      }),
+    deleteBudget: (category: string) =>
+      fetchJson<{ ok: boolean }>(`${API_ENDPOINTS.PERSONAL.BUDGETS}/${category}`, { method: "DELETE" }),
+    getBudgetProgress: () => fetchJson<BudgetProgress[]>(API_ENDPOINTS.PERSONAL.BUDGET_PROGRESS),
+
+    // AI Chat
+    chat: (message: string) =>
+      fetchJson<{ response: string; insights: PersonalInsights | null }>(API_ENDPOINTS.PERSONAL.CHAT, {
+        method: "POST",
+        body: { message },
+      }),
+
+    // Categories
+    getCategories: () => fetchJson<Record<string, string[]>>(API_ENDPOINTS.PERSONAL.CATEGORIES),
+  },
 };
+
+// -------- Personal Finance Types --------
+
+export type PersonalEntryInput = {
+  entry_date: string;
+  entry_type: "income" | "expense";
+  category: string;
+  amount: number;
+  currency?: string;
+  description?: string;
+  vendor?: string;
+  notes?: string;
+};
+
+export type PersonalEntry = {
+  id: number;
+  entry_date: string;
+  entry_type: "income" | "expense";
+  category: string;
+  amount: number;
+  currency: string;
+  description?: string | null;
+  vendor?: string | null;
+  notes?: string | null;
+  ai_categorized: boolean;
+  created_at: string;
+};
+
+export type ParsedPersonalEntry = {
+  entry_type: "income" | "expense";
+  category: string;
+  amount: number;
+  description: string;
+  vendor?: string | null;
+  entry_date?: string | null;
+};
+
+export type PersonalSummary = {
+  start_date: string;
+  end_date: string;
+  income: number;
+  expense: number;
+  net: number;
+};
+
+export type CategoryBreakdown = {
+  category: string;
+  total: number;
+  count: number;
+};
+
+export type MonthlyTrend = {
+  month: string;
+  income: number;
+  expense: number;
+};
+
+export type TopSpendingItem = {
+  description: string;
+  vendor?: string | null;
+  category: string;
+  total: number;
+  count: number;
+};
+
+export type PersonalInsights = {
+  this_week_expense: number;
+  this_week_income: number;
+  week_change_percent: number;
+  this_month_expense: number;
+  this_month_income: number;
+  this_month_net: number;
+  top_category: string | null;
+  top_category_amount: number;
+};
+
+export type PersonalBudget = {
+  id: number;
+  category: string;
+  monthly_limit: number;
+};
+
+export type BudgetProgress = {
+  category: string;
+  monthly_limit: number;
+  spent: number;
+  remaining: number;
+  percent_used: number;
+};
+

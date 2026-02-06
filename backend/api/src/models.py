@@ -76,6 +76,8 @@ class User(Base):
 
     organisation:     Mapped["Organisation"] = relationship("Organisation", back_populates="users")
     journal_days:     Mapped[List["JournalDay"]] = relationship("JournalDay", back_populates="user")
+    personal_entries: Mapped[List["PersonalEntry"]] = relationship("PersonalEntry", back_populates="user", cascade="all, delete-orphan")
+    personal_budgets: Mapped[List["PersonalBudget"]] = relationship("PersonalBudget", back_populates="user", cascade="all, delete-orphan")
 
 
 class Subscription(Base):
@@ -380,3 +382,120 @@ class JournalEntry(Base):
 
     org: Mapped["Organisation"] = relationship("Organisation")
     journal_day: Mapped["JournalDay"] = relationship("JournalDay", back_populates="entries")
+
+
+# -----------------------------
+# Hisabi Personal
+# -----------------------------
+
+class PersonalCategory(str, Enum):
+    """Spending categories for personal finance tracking."""
+    # Income
+    SALARY = "salary"
+    FREELANCE = "freelance"
+    INVESTMENT_INCOME = "investment_income"
+    OTHER_INCOME = "other_income"
+    # Food & Drink
+    GROCERIES = "groceries"
+    DINING = "dining"
+    DELIVERY = "delivery"
+    ALCOHOL = "alcohol"
+    NIGHTLIFE = "nightlife"
+    # Lifestyle
+    FITNESS = "fitness"
+    WELLNESS = "wellness"
+    FASHION = "fashion"
+    ENTERTAINMENT = "entertainment"
+    PERSONAL_CARE = "personal_care"
+    # Housing & Bills
+    RENT = "rent"
+    UTILITIES = "utilities"
+    HOUSEHOLD = "household"
+    SUBSCRIPTIONS = "subscriptions"
+    # Finance
+    INVESTMENTS = "investments"
+    SAVINGS = "savings"
+    # Other
+    TRANSPORTATION = "transportation"
+    HEALTHCARE = "healthcare"
+    EDUCATION = "education"
+    TRAVEL = "travel"
+    GIFTS = "gifts"
+    OTHER = "other"
+
+
+class PersonalEntryType(str, Enum):
+    """Type of personal finance entry."""
+    INCOME = "income"
+    EXPENSE = "expense"
+
+
+class PersonalEntry(Base):
+    """User personal finance entry for expense/income tracking."""
+    __tablename__ = "personal_entries"
+    __table_args__ = (
+        Index("ix_personal_user_date", "user_id", "entry_date"),
+        Index("ix_personal_user_category", "user_id", "category"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    entry_date: Mapped[date] = mapped_column(Date, nullable=False)
+    entry_type: Mapped[str] = mapped_column(
+        String(10),
+        nullable=False,
+    )  # "income" | "expense"
+    category: Mapped[str] = mapped_column(String(50), nullable=False)
+    amount: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False)
+    currency: Mapped[str] = mapped_column(String(10), nullable=False, default="USD")
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    vendor: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    ai_categorized: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+    user: Mapped["User"] = relationship("User", back_populates="personal_entries")
+
+
+class PersonalBudget(Base):
+    """Monthly budget limits per category for a user."""
+    __tablename__ = "personal_budgets"
+    __table_args__ = (
+        UniqueConstraint("user_id", "category", name="uq_personal_budget_user_category"),
+        Index("ix_personal_budget_user", "user_id"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    category: Mapped[str] = mapped_column(String(50), nullable=False)
+    monthly_limit: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+    user: Mapped["User"] = relationship("User", back_populates="personal_budgets")
+

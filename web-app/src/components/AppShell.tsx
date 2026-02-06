@@ -12,6 +12,7 @@ const baseLinks = [
   { href: "/app/upload", label: "Upload", icon: "📤", info: "Send spreadsheets or statements into Hisabi." },
   { href: "/app/documents", label: "Documents", icon: "📄", info: "Browse and download generated reports." },
   { href: "/app/journal", label: "Journal", icon: "📝", info: "Log day-to-day notes when away from spreadsheets." },
+  { href: "/app/personal", label: "Personal", icon: "💰", info: "Track personal expenses, set budgets, and get AI insights." },
   { href: "/app/receivables", label: "Receivables", icon: "💳", info: "Track money owed to you and money you owe." },
   { href: "/app/analytics", label: "Analytics", icon: "📈", info: "Visualise revenue, expenses, margins, and trends." },
   { href: "/app/settings/billing", label: "Settings", icon: "⚙️", info: "Manage plan, invoices, and payment methods." },
@@ -220,8 +221,8 @@ function ThemeToggle() {
         <button
           onClick={() => setTheme("light")}
           className={`px-2 py-1 text-xs rounded-md transition-all ${theme === "light"
-              ? "bg-background shadow text-foreground font-medium"
-              : "text-muted-foreground hover:text-foreground"
+            ? "bg-background shadow text-foreground font-medium"
+            : "text-muted-foreground hover:text-foreground"
             }`}
           aria-label="Light mode"
         >
@@ -230,8 +231,8 @@ function ThemeToggle() {
         <button
           onClick={() => setTheme("dark")}
           className={`px-2 py-1 text-xs rounded-md transition-all ${theme === "dark"
-              ? "bg-background shadow text-foreground font-medium"
-              : "text-muted-foreground hover:text-foreground"
+            ? "bg-background shadow text-foreground font-medium"
+            : "text-muted-foreground hover:text-foreground"
             }`}
           aria-label="Dark mode"
         >
@@ -240,8 +241,8 @@ function ThemeToggle() {
         <button
           onClick={() => setTheme("system")}
           className={`px-2 py-1 text-xs rounded-md transition-all ${theme === "system"
-              ? "bg-background shadow text-foreground font-medium"
-              : "text-muted-foreground hover:text-foreground"
+            ? "bg-background shadow text-foreground font-medium"
+            : "text-muted-foreground hover:text-foreground"
             }`}
           aria-label="System theme"
         >

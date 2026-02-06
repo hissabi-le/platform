@@ -116,9 +116,9 @@ pwd_context = CryptContext(schemes=["argon2"], deprecated="auto")
 http_bearer = HTTPBearer(auto_error=False)
 
 FEATURE_MATRIX: dict[str, set[str]] = {
-    "starter": {"documents", "inventory", "analytics_basic"},
-    "pro": {"documents", "inventory", "analytics_basic", "analytics_advanced", "assistant"},
-    "enterprise": {"documents", "inventory", "analytics_basic", "analytics_advanced", "assistant", "api"},
+    "starter": {"documents", "inventory", "analytics_basic", "personal"},
+    "pro": {"documents", "inventory", "analytics_basic", "analytics_advanced", "assistant", "personal"},
+    "enterprise": {"documents", "inventory", "analytics_basic", "analytics_advanced", "assistant", "api", "personal"},
 }
 
 

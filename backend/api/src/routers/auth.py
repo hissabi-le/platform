@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 
 from ..database import get_db
 from ..models import Subscription, User
@@ -27,6 +28,23 @@ from ..security import (
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
+
+async def _get_plan(session: AsyncSession, org_id: int) -> str | None:
+    # 1. Try active/trialing first
+    stmt = select(Subscription).where(
+        Subscription.org_id == org_id,
+        Subscription.status.in_(("active", "trialing"))
+    )
+    sub = await session.scalar(stmt)
+    if sub:
+        return sub.plan
+    
+    # 2. Fallback to any subscription
+    stmt = select(Subscription).where(Subscription.org_id == org_id)
+    sub = await session.scalar(stmt)
+    return sub.plan if sub else None
+
+
 @router.post("/register", response_model=AuthResponse, status_code=status.HTTP_201_CREATED)
 async def register(
     payload: UserCreate,
@@ -39,6 +57,7 @@ async def register(
 
     user = await repo.create_with_org(session, payload.email, payload.password, payload.org_name, role="admin")
 
+    # specific plan for personal demo? No, standard register is starter.
     subscription = Subscription(
         org_id=user.org_id,
         stripe_subscription_id=f"starter-{user.org_id}",
@@ -49,10 +68,13 @@ async def register(
     await session.commit()
     await session.refresh(user)
 
+    user_out = UserOut.model_validate(user, from_attributes=True)
+    user_out.plan = "starter"
+
     return AuthResponse(
         access_token=create_access_token(user),
         refresh_token=create_refresh_token(user),
-        user=UserOut.model_validate(user, from_attributes=True),
+        user=user_out,
     )
 
 
@@ -69,10 +91,14 @@ async def login(
     if not user.is_active:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User disabled")
 
+    plan = await _get_plan(session, user.org_id)
+    user_out = UserOut.model_validate(user, from_attributes=True)
+    user_out.plan = plan
+
     return AuthResponse(
         access_token=create_access_token(user),
         refresh_token=create_refresh_token(user),
-        user=UserOut.model_validate(user, from_attributes=True),
+        user=user_out,
     )
 
 
@@ -93,5 +119,11 @@ async def refresh(
 
 
 @router.get("/me", response_model=UserOut)
-async def me(auth: AuthContext = Depends(current_user)) -> UserOut:
-    return UserOut.model_validate(auth.user, from_attributes=True)
+async def me(
+    auth: AuthContext = Depends(current_user),
+    session: AsyncSession = Depends(get_db),
+) -> UserOut:
+    plan = await _get_plan(session, auth.user.org_id)
+    user_out = UserOut.model_validate(auth.user, from_attributes=True)
+    user_out.plan = plan
+    return user_out

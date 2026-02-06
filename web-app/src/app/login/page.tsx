@@ -39,7 +39,11 @@ export default function LoginPage() {
     try {
       const { access_token, user } = await api.auth.login(email, password);
       login(access_token, user);
-      router.push("/app");
+      if (user.plan === "personal") {
+        router.push("/app/personal");
+      } else {
+        router.push("/app");
+      }
     } catch (error) {
       if (error instanceof ApiError) {
         if (error.status === 401) {

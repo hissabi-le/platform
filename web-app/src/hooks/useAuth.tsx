@@ -5,7 +5,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 import { api } from "@/lib/api";
 import { AUTH_TOKEN_KEY, EVENTS } from "@/lib/constants";
 
-type User = { id: number; email: string; org_id: number };
+type User = { id: number; email: string; org_id: number; plan?: string };
 
 type AuthContextType = {
   user: User | null;

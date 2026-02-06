@@ -174,12 +174,12 @@ export type DocumentListItem = {
 export const api = {
   auth: {
     login: (email: string, password: string) =>
-      fetchJson<{ access_token: string; refresh_token: string; user: { id: number; email: string; org_id: number } }>(
+      fetchJson<{ access_token: string; refresh_token: string; user: { id: number; email: string; org_id: number; plan?: string } }>(
         API_ENDPOINTS.AUTH.LOGIN,
         { method: "POST", body: { email, password } }
       ),
     me: () =>
-      fetchJson<{ id: number; email: string; org_id: number }>(API_ENDPOINTS.AUTH.ME),
+      fetchJson<{ id: number; email: string; org_id: number; plan?: string }>(API_ENDPOINTS.AUTH.ME),
     logout: () =>
       fetchJson<void>(API_ENDPOINTS.AUTH.LOGOUT, { method: "POST" }),
   },

@@ -105,6 +105,7 @@ class UserOut(BaseModel):
     email: str
     org_id: Id
     role: Literal["user", "admin"] = "user"
+    plan: Optional[str] = None
 
 
 class TokenOut(BaseModel):

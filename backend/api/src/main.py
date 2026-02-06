@@ -146,8 +146,9 @@ async def _persist_uploaded_document(
 @app.on_event("startup")
 async def on_startup():
     # In production, manage schema with Alembic migrations.
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    if settings.environment == "development":
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
 
 
 # --------------------- Uploads ---------------------

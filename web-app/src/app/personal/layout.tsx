@@ -25,7 +25,7 @@ export default function PersonalLayout({ children }: { children: React.ReactNode
                             <span className="absolute top-full right-0 mt-2 text-xs bg-slate-800 text-slate-200 px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">Settings</span>
                         </Link>
                         <div className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-500 to-indigo-600 flex items-center justify-center text-white text-sm font-bold border-2 border-slate-900 shadow-lg shadow-purple-900/20">
-                            {(user?.email || "U")[0].toUpperCase()}
+                            {user?.email ? user.email[0].toUpperCase() : "U"}
                         </div>
                     </div>
                 </header>

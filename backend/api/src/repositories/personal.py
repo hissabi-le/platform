@@ -259,35 +259,66 @@ class PersonalRepo:
     ) -> Dict[str, Any]:
         """Get personalized insights for greeting message."""
         today = date.today()
+        # Intervals:
+        # This week: (today-7, today]
+        # Last week: (today-14, today-7]
         week_ago = today - timedelta(days=7)
         two_weeks_ago = today - timedelta(days=14)
         month_start = date(today.year, today.month, 1)
+        
+        query_start = min(two_weeks_ago, month_start)
 
-        # This week's spending
-        this_week = await self.get_summary(session, user_id, week_ago, today)
-        # Last week's spending
-        last_week = await self.get_summary(session, user_id, two_weeks_ago, week_ago)
-        # This month's totals
-        this_month = await self.get_summary(session, user_id, month_start, today)
-
-        # Top category this month
-        top_categories = await self.get_category_breakdown(
-            session, user_id, month_start, today, "expense"
+        # Optimization: Fetch all relevant entries in one query
+        # Fix: Limit increased to ensure coverage; date sort allows optimization if needed
+        entries = await self.list_entries(
+            session, user_id, start_date=query_start, limit=5000
         )
 
-        week_change = 0
+        this_week = {"income": 0.0, "expense": 0.0}
+        last_week = {"income": 0.0, "expense": 0.0}
+        this_month = {"income": 0.0, "expense": 0.0}
+        categories: Dict[str, float] = {}
+
+        for e in entries:
+            amt = float(e.amount)
+            # This Week: week_ago < date <= today
+            if e.entry_date > week_ago and e.entry_date <= today:
+                 this_week[e.entry_type] += amt
+            
+            # Last Week: two_weeks_ago < date <= week_ago
+            if e.entry_date > two_weeks_ago and e.entry_date <= week_ago:
+                 last_week[e.entry_type] += amt
+
+            # This Month: month_start <= date <= today
+            if e.entry_date >= month_start and e.entry_date <= today:
+                 this_month[e.entry_type] += amt
+                 if e.entry_type == "expense":
+                     categories[e.category] = categories.get(e.category, 0.0) + amt
+        
+        this_month_net = this_month["income"] - this_month["expense"]
+        
+        week_change = 0.0
         if last_week["expense"] > 0:
             week_change = ((this_week["expense"] - last_week["expense"]) / last_week["expense"]) * 100
+            
+        # Top category
+        top_cat_name = None
+        top_cat_amount = 0.0
+        if categories:
+            # Sort by amount desc
+            best_cat = max(categories.items(), key=lambda x: x[1])
+            top_cat_name = best_cat[0]
+            top_cat_amount = best_cat[1]
 
         return {
-            "this_week_expense": float(this_week["expense"]),
-            "this_week_income": float(this_week["income"]),
-            "week_change_percent": round(float(week_change), 1),
-            "this_month_expense": float(this_month["expense"]),
-            "this_month_income": float(this_month["income"]),
-            "this_month_net": float(this_month["net"]),
-            "top_category": top_categories[0]["category"] if top_categories else None,
-            "top_category_amount": top_categories[0]["total"] if top_categories else 0,
+            "this_week_expense": this_week["expense"],
+            "this_week_income": this_week["income"],
+            "week_change_percent": round(week_change, 1),
+            "this_month_expense": this_month["expense"],
+            "this_month_income": this_month["income"],
+            "this_month_net": this_month_net,
+            "top_category": top_cat_name,
+            "top_category_amount": top_cat_amount,
         }
 
     # ==================== Accounts ====================

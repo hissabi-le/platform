@@ -3,7 +3,7 @@ import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
-import { ArrowLeft, Trash2, Plus, Calendar, Tag, DollarSign } from "lucide-react";
+import { ArrowLeft, Trash2, DollarSign } from "lucide-react";
 import Link from 'next/link';
 
 const CATEGORY_ICONS: Record<string, string> = {
@@ -37,7 +37,7 @@ export default function TransactionsPage() {
     const createMutation = useMutation({
         mutationFn: () => api.personal.createEntry({
             ...formData,
-            entry_date: formData.entry_date || new Date().toISOString().split("T")[0],
+            entry_date: (formData.entry_date || new Date().toISOString().split("T")[0]) as string,
             amount: parseFloat(formData.amount),
         }),
         onSuccess: () => {

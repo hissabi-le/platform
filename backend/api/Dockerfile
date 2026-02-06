@@ -42,6 +42,7 @@ RUN pip install --no-cache-dir \
 # copy source + alembic scripts if need migrations at runtime
 COPY src       src
 COPY alembic   alembic
+COPY seed_personal_demo.py .
 
 # Railway injects PORT dynamically - use shell form to support variable expansion
 CMD uvicorn src.main:app --host 0.0.0.0 --port ${PORT:-8000}

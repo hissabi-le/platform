@@ -9,7 +9,7 @@ from typing import List, Optional, Dict, Any
 from sqlalchemy import select, func, and_, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..models import PersonalEntry, PersonalBudget, PersonalCategory
+from ..models import PersonalEntry, PersonalBudget, PersonalCategory, PersonalAccount
 
 
 class PersonalRepo:
@@ -289,6 +289,59 @@ class PersonalRepo:
             "top_category": top_categories[0]["category"] if top_categories else None,
             "top_category_amount": top_categories[0]["total"] if top_categories else 0,
         }
+
+    # ==================== Accounts ====================
+
+    async def list_accounts(
+        self,
+        session: AsyncSession,
+        user_id: int,
+    ) -> List[PersonalAccount]:
+        """List all accounts for a user."""
+        stmt = select(PersonalAccount).where(PersonalAccount.user_id == user_id)
+        result = await session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def create_account(
+        self,
+        session: AsyncSession,
+        user_id: int,
+        name: str,
+        balance: Decimal,
+        type: str,
+    ) -> PersonalAccount:
+        """Create a new account."""
+        account = PersonalAccount(
+            user_id=user_id,
+            name=name,
+            balance=balance,
+            type=type,
+        )
+        session.add(account)
+        await session.flush()
+        return account
+
+    async def get_account(
+        self,
+        session: AsyncSession,
+        user_id: int,
+        account_id: int,
+    ) -> Optional[PersonalAccount]:
+         stmt = select(PersonalAccount).where(
+            and_(PersonalAccount.id == account_id, PersonalAccount.user_id == user_id)
+         )
+         result = await session.execute(stmt)
+         return result.scalar_one_or_none()
+
+    async def delete_account(
+        self,
+        session: AsyncSession,
+        account: PersonalAccount,
+    ) -> None:
+        """Delete an account."""
+        await session.delete(account)
+        await session.flush()
+
 
     # ==================== Budgets ====================
 

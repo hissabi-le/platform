@@ -27,6 +27,8 @@ export const API_ENDPOINTS = {
     },
     PERSONAL: {
         ENTRIES: "/personal/entries",
+        ACCOUNTS: "/personal/accounts",
+        ACCOUNTS_ID: (id: number) => `/personal/accounts/${id}`,
         ENTRY: (id: number) => `/personal/entries/${id}`,
         PARSE: "/personal/parse",
         PARSE_SAVE: "/personal/parse/save",

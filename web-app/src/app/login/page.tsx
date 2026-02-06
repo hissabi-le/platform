@@ -40,7 +40,7 @@ export default function LoginPage() {
       const { access_token, user } = await api.auth.login(email, password);
       login(access_token, user);
       if (user.plan === "personal") {
-        router.push("/app/personal");
+        router.push("/personal");
       } else {
         router.push("/app");
       }

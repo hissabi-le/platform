@@ -298,6 +298,16 @@ export const api = {
   },
 
   personal: {
+    // Accounts
+    listAccounts: () => fetchJson<PersonalAccount[]>(API_ENDPOINTS.PERSONAL.ACCOUNTS),
+    createAccount: (name: string, balance: number, type: string) =>
+      fetchJson<PersonalAccount>(API_ENDPOINTS.PERSONAL.ACCOUNTS, {
+        method: "POST",
+        body: { name, balance, type },
+      }),
+    deleteAccount: (id: number) =>
+      fetchJson<{ ok: boolean }>(API_ENDPOINTS.PERSONAL.ACCOUNTS_ID(id), { method: "DELETE" }),
+
     // Entries CRUD
     createEntry: (data: PersonalEntryInput) =>
       fetchJson<PersonalEntry>(API_ENDPOINTS.PERSONAL.ENTRIES, { method: "POST", body: data }),
@@ -512,8 +522,6 @@ export type FlowData = {
   total_expense: number;
 };
 
-// -------- Merchant DNA Types --------
-
 export type MerchantSummary = {
   vendor: string;
   total_spend: number;
@@ -544,4 +552,11 @@ export type MerchantProfile = {
   visits_per_week: number;
   frequency_by_day: FrequencyByDay[];
   price_trend: PriceTrend[];
+};
+
+export type PersonalAccount = {
+  id: number;
+  name: string;
+  balance: number;
+  type: string;
 };

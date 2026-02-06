@@ -78,6 +78,7 @@ class User(Base):
     journal_days:     Mapped[List["JournalDay"]] = relationship("JournalDay", back_populates="user")
     personal_entries: Mapped[List["PersonalEntry"]] = relationship("PersonalEntry", back_populates="user", cascade="all, delete-orphan")
     personal_budgets: Mapped[List["PersonalBudget"]] = relationship("PersonalBudget", back_populates="user", cascade="all, delete-orphan")
+    personal_accounts: Mapped[List["PersonalAccount"]] = relationship("PersonalAccount", back_populates="user", cascade="all, delete-orphan")
 
 
 class Subscription(Base):
@@ -498,4 +499,26 @@ class PersonalBudget(Base):
     )
 
     user: Mapped["User"] = relationship("User", back_populates="personal_budgets")
+
+
+class PersonalAccount(Base):
+    """User defined accounts (e.g. Savings, Education Fund)"""
+    __tablename__ = "personal_accounts"
+    
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    balance: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False, default=Decimal('0'))
+    type: Mapped[str] = mapped_column(String(50), nullable=False, default="checking")
+    
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+
+    user: Mapped["User"] = relationship("User", back_populates="personal_accounts")
 

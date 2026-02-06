@@ -117,6 +117,23 @@ class ChatResponse(BaseModel):
     insights: Optional[dict] = None
 
 
+class PersonalAccountCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=100)
+    balance: Decimal = Field(default=0)
+    type: str = Field(default="checking", min_length=1, max_length=50)
+
+
+class PersonalAccountResponse(BaseModel):
+    id: int
+    name: str
+    balance: float
+    type: str
+    created_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+
 # ==================== Entries Endpoints ====================
 
 @router.post("/entries", response_model=PersonalEntryResponse)
@@ -389,6 +406,46 @@ async def get_insights(
     """Get personalized insights for greeting message."""
     insights = await personal_repo.get_insights(session, auth.user.id)
     return insights
+
+
+# ==================== Accounts Endpoints ====================
+
+@router.get("/accounts", response_model=List[PersonalAccountResponse])
+async def list_accounts(
+    auth: AuthContext = Depends(require_plan("personal")),
+    session: AsyncSession = Depends(get_db),
+):
+    """List all personal accounts."""
+    return await personal_repo.list_accounts(session, auth.user.id)
+
+
+@router.post("/accounts", response_model=PersonalAccountResponse)
+async def create_account(
+    payload: PersonalAccountCreate,
+    auth: AuthContext = Depends(require_plan("personal")),
+    session: AsyncSession = Depends(get_db),
+):
+    """Create a new personal account."""
+    account = await personal_repo.create_account(
+        session, auth.user.id, payload.name, payload.balance, payload.type
+    )
+    await session.commit()
+    return account
+
+
+@router.delete("/accounts/{account_id}")
+async def delete_account(
+    account_id: int,
+    auth: AuthContext = Depends(require_plan("personal")),
+    session: AsyncSession = Depends(get_db),
+):
+    """Delete a personal account."""
+    account = await personal_repo.get_account(session, auth.user.id, account_id)
+    if not account:
+        raise HTTPException(status_code=404, detail="Account not found")
+    await personal_repo.delete_account(session, account)
+    await session.commit()
+    return {"ok": True}
 
 
 # ==================== Budget Endpoints ====================

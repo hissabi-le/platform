@@ -25,6 +25,7 @@ dependencies = [
   "greenlet",
   "openai>=1.0.0",
   "bcrypt==4.0.1",
+  "psycopg>=3.3.2",
 ]
 
 [tool.ruff]

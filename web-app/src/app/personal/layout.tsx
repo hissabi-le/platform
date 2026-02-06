@@ -6,7 +6,8 @@ import { Settings } from "lucide-react";
 
 export default function PersonalLayout({ children }: { children: React.ReactNode }) {
     const { user } = useAuth();
-    const initial = user?.email ? user.email[0].toUpperCase() : "U";
+    const email = user?.email;
+    const initial = email ? email[0].toUpperCase() : "U";
 
     return (
         <Protected>

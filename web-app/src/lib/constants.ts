@@ -3,6 +3,7 @@ export const AUTH_TOKEN_KEY = "hissabi_token";
 export const API_ENDPOINTS = {
     AUTH: {
         LOGIN: "/auth/login",
+        REGISTER: "/auth/register",
         ME: "/auth/me",
         LOGOUT: "/auth/logout",
     },

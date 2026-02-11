@@ -180,6 +180,11 @@ export const api = {
       ),
     me: () =>
       fetchJson<{ id: number; email: string; org_id: number; plan?: string }>(API_ENDPOINTS.AUTH.ME),
+    register: (email: string, password: string, org_name: string) =>
+      fetchJson<{ access_token: string; refresh_token: string; user: { id: number; email: string; org_id: number; plan?: string } }>(
+        API_ENDPOINTS.AUTH.REGISTER,
+        { method: "POST", body: { email, password, org_name } }
+      ),
     logout: () =>
       fetchJson<void>(API_ENDPOINTS.AUTH.LOGOUT, { method: "POST" }),
   },

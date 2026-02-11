@@ -339,3 +339,33 @@ html {
     -webkit-backdrop-filter: blur(10px);
   }
 }
+
+/* ========================================
+   Emoji Rendering Fix
+   Prevents emojis from inheriting muted/grey
+   text colors and appearing washed out.
+   ======================================== */
+@layer base {
+
+  /* Target emoji font rendering — ensure they always show at full color */
+  .emoji,
+  [role="img"] {
+    color: initial;
+    opacity: 1;
+    font-style: normal;
+    -webkit-text-fill-color: initial;
+  }
+}
+
+/* Dark mode scrollbar */
+.dark ::-webkit-scrollbar-track {
+  background: hsl(220 20% 12%);
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background: hsl(220 15% 25%);
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: hsl(220 15% 35%);
+}

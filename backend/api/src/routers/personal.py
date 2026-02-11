@@ -502,21 +502,34 @@ async def get_budget_progress(
 
 # ==================== AI Chat ====================
 
-PERSONAL_CHAT_PROMPT = """You are a friendly personal finance assistant for the Hisabi app. 
-You help users understand their spending, give budgeting advice, and answer questions about their finances.
+PERSONAL_CHAT_PROMPT = """You are a friendly, knowledgeable personal finance assistant for the Hisabi app.
+You have full access to the user's financial data below. Answer questions accurately using the numbers provided.
+Be conversational, supportive, and give actionable advice. Keep responses concise but helpful.
 
-User's current financial context:
-- This week's spending: ${this_week_expense}
-- This week's income: ${this_week_income}
-- Week-over-week change: {week_change_percent}%
-- This month's total spending: ${this_month_expense}
-- This month's total income: ${this_month_income}  
-- This month's net: ${this_month_net}
-- Top spending category: {top_category} (${top_category_amount})
+=== USER'S FINANCIAL SNAPSHOT ===
 
-Based on this context, respond helpfully to the user's question or request.
-Be conversational, supportive, and give actionable advice when appropriate.
-Keep responses concise but helpful.
+THIS MONTH:
+  Income: ${this_month_income:.0f}
+  Expenses: ${this_month_expense:.0f}
+  Net: ${this_month_net:.0f}
+
+THIS WEEK:
+  Income: ${this_week_income:.0f}
+  Expenses: ${this_week_expense:.0f}
+
+TOP 5 SPENDING CATEGORIES (this month):
+{top5_categories}
+
+BUDGET STATUS:
+{budget_status}
+
+MONTHLY TRENDS (last 3 months):
+{monthly_trends}
+
+RECENT TRANSACTIONS (last 10):
+{recent_transactions}
+
+=== END SNAPSHOT ===
 
 User's message: {message}
 """
@@ -529,20 +542,24 @@ async def chat(
     session: AsyncSession = Depends(get_db),
 ):
     """Chat with AI about personal finances."""
-    # Get user's financial context
-    insights = await personal_repo.get_insights(session, auth.user.id)
+    # Get rich financial context
+    ctx = await personal_repo.get_chat_context(session, auth.user.id)
 
     prompt = PERSONAL_CHAT_PROMPT.format(
-        this_week_expense=insights["this_week_expense"],
-        this_week_income=insights["this_week_income"],
-        week_change_percent=insights["week_change_percent"],
-        this_month_expense=insights["this_month_expense"],
-        this_month_income=insights["this_month_income"],
-        this_month_net=insights["this_month_net"],
-        top_category=insights["top_category"] or "N/A",
-        top_category_amount=insights["top_category_amount"],
+        this_month_income=ctx["this_month_income"],
+        this_month_expense=ctx["this_month_expense"],
+        this_month_net=ctx["this_month_net"],
+        this_week_income=ctx["this_week_income"],
+        this_week_expense=ctx["this_week_expense"],
+        top5_categories=ctx["top5_categories"],
+        budget_status=ctx["budget_status"],
+        monthly_trends=ctx["monthly_trends"],
+        recent_transactions=ctx["recent_transactions"],
         message=payload.message,
     )
+
+    # Also get basic insights for the response payload
+    insights = await personal_repo.get_insights(session, auth.user.id)
 
     try:
         response = openai_client.chat(prompt)

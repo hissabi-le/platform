@@ -1,19 +1,64 @@
 "use client";
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
-import { Target, DollarSign, Calendar, TrendingDown, TrendingUp, ArrowLeft, Sparkles } from "lucide-react";
+import { Target, DollarSign, Calendar, TrendingDown, TrendingUp, ArrowLeft, Sparkles, Trash2, AlertTriangle } from "lucide-react";
 import Link from "next/link";
+
+const STORAGE_KEY = "hisabi_plans";
 
 const formatCurrency = (val: number) =>
     new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(val);
+
+interface Plan {
+    id: string;
+    name: string;
+    amount: number;
+    targetDate: string;
+    createdAt: string;
+}
+
+function generateId() {
+    return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+}
+
+function loadPlans(): Plan[] {
+    if (typeof window === "undefined") return [];
+    try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        return raw ? JSON.parse(raw) : [];
+    } catch {
+        return [];
+    }
+}
+
+function savePlans(plans: Plan[]) {
+    if (typeof window === "undefined") return;
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(plans));
+}
 
 export default function PlanningPage() {
     const [name, setName] = useState("");
     const [amount, setAmount] = useState("");
     const [targetDate, setTargetDate] = useState("");
-    const [plans, setPlans] = useState<Array<{ name: string; amount: number; targetDate: string }>>([]);
+    const [plans, setPlans] = useState<Plan[]>([]);
     const [showResults, setShowResults] = useState(false);
+    const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+
+    // Load from localStorage on mount
+    useEffect(() => {
+        const loaded = loadPlans();
+        if (loaded.length > 0) {
+            setPlans(loaded);
+            setShowResults(true);
+        }
+    }, []);
+
+    // Persist whenever plans change
+    const updatePlans = useCallback((newPlans: Plan[]) => {
+        setPlans(newPlans);
+        savePlans(newPlans);
+    }, []);
 
     const { data: summaryData } = useQuery({
         queryKey: ["personal", "summary"],
@@ -41,19 +86,66 @@ export default function PlanningPage() {
         e.preventDefault();
         const parsed = parseFloat(amount);
         if (!name.trim() || isNaN(parsed) || parsed <= 0) return;
-        setPlans(prev => [...prev, { name: name.trim(), amount: parsed, targetDate: targetDate || "" }]);
+        const newPlan: Plan = {
+            id: generateId(),
+            name: name.trim(),
+            amount: parsed,
+            targetDate: targetDate || "",
+            createdAt: new Date().toISOString(),
+        };
+        updatePlans([...plans, newPlan]);
         setName("");
         setAmount("");
         setTargetDate("");
         setShowResults(true);
     }
 
-    function removePlan(index: number) {
-        setPlans(prev => prev.filter((_, i) => i !== index));
-        if (plans.length <= 1) setShowResults(false);
+    function removePlan(id: string) {
+        const newPlans = plans.filter(p => p.id !== id);
+        updatePlans(newPlans);
+        setDeleteConfirmId(null);
+        if (newPlans.length === 0) setShowResults(false);
     }
 
-    // Impact analysis
+    // Date-aware impact analysis
+    const planAnalysis = useMemo(() => {
+        if (plans.length === 0) return null;
+
+        const today = new Date();
+        const results = plans.map(plan => {
+            let monthsUntilTarget: number | null = null;
+            let monthlySavingNeeded: number | null = null;
+            let isOverdue = false;
+
+            if (plan.targetDate) {
+                const target = new Date(plan.targetDate);
+                const diffMs = target.getTime() - today.getTime();
+                const diffMonths = Math.max(1, Math.ceil(diffMs / (1000 * 60 * 60 * 24 * 30)));
+
+                if (diffMs < 0) {
+                    isOverdue = true;
+                    monthsUntilTarget = 0;
+                } else {
+                    monthsUntilTarget = diffMonths;
+                    monthlySavingNeeded = plan.amount / diffMonths;
+                }
+            }
+
+            return {
+                ...plan,
+                monthsUntilTarget,
+                monthlySavingNeeded,
+                isOverdue,
+            };
+        });
+
+        const totalMonthlySavingNeeded = results.reduce((s, r) => s + (r.monthlySavingNeeded ?? 0), 0);
+        const canMeetDeadlines = totalMonthlySavingNeeded <= avgMonthlySurplus;
+
+        return { results, totalMonthlySavingNeeded, canMeetDeadlines };
+    }, [plans, avgMonthlySurplus]);
+
+    // General impact
     const monthsToSave = avgMonthlySurplus > 0 ? Math.ceil(totalPlannedCost / avgMonthlySurplus) : Infinity;
     const adjustedMonthlyRemaining = monthlySurplus - (totalPlannedCost / Math.max(monthsToSave, 1));
     const canAfford = monthlySurplus >= totalPlannedCost;
@@ -154,18 +246,63 @@ export default function PlanningPage() {
                 <div className="rounded-2xl border bg-card p-6 shadow-sm">
                     <h2 className="text-lg font-semibold mb-4">Your Plans</h2>
                     <div className="space-y-3">
-                        {plans.map((plan, i) => (
-                            <div key={i} className="flex items-center justify-between p-4 rounded-xl bg-secondary/50">
-                                <div>
-                                    <p className="font-medium">{plan.name}</p>
-                                    <p className="text-sm text-muted-foreground">
-                                        {formatCurrency(plan.amount)}
-                                        {plan.targetDate && ` · Target: ${new Date(plan.targetDate).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`}
-                                    </p>
+                        {plans.map((plan) => {
+                            const analysis = planAnalysis?.results.find(r => r.id === plan.id);
+                            return (
+                                <div key={plan.id} className="flex items-center justify-between p-4 rounded-xl bg-secondary/50 group">
+                                    <div className="min-w-0 flex-1">
+                                        <div className="flex items-center gap-2">
+                                            <p className="font-medium truncate">{plan.name}</p>
+                                            {analysis?.isOverdue && (
+                                                <span className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-rose-500/15 text-rose-500 flex-shrink-0">
+                                                    <AlertTriangle className="w-3 h-3" /> Overdue
+                                                </span>
+                                            )}
+                                        </div>
+                                        <div className="flex items-center gap-2 text-sm text-muted-foreground flex-wrap mt-0.5">
+                                            <span>{formatCurrency(plan.amount)}</span>
+                                            {plan.targetDate && (
+                                                <>
+                                                    <span>·</span>
+                                                    <span>
+                                                        Target: {new Date(plan.targetDate).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                                                    </span>
+                                                </>
+                                            )}
+                                            {analysis?.monthlySavingNeeded && (
+                                                <>
+                                                    <span>·</span>
+                                                    <span className="text-primary">{formatCurrency(analysis.monthlySavingNeeded)}/mo needed</span>
+                                                </>
+                                            )}
+                                        </div>
+                                    </div>
+                                    {deleteConfirmId === plan.id ? (
+                                        <div className="flex items-center gap-1 animate-in fade-in duration-200 flex-shrink-0 ml-2">
+                                            <button
+                                                onClick={() => removePlan(plan.id)}
+                                                className="px-2 py-1 text-xs bg-destructive text-destructive-foreground rounded-md hover:opacity-90 transition-opacity font-medium"
+                                            >
+                                                Delete
+                                            </button>
+                                            <button
+                                                onClick={() => setDeleteConfirmId(null)}
+                                                className="px-2 py-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                                            >
+                                                Cancel
+                                            </button>
+                                        </div>
+                                    ) : (
+                                        <button
+                                            onClick={() => setDeleteConfirmId(plan.id)}
+                                            className="p-2 text-muted-foreground hover:text-destructive transition-colors sm:opacity-0 sm:group-hover:opacity-100 flex-shrink-0 ml-2"
+                                        >
+                                            <Trash2 className="w-4 h-4" />
+                                        </button>
+                                    )}
                                 </div>
-                                <button onClick={() => removePlan(i)} className="text-sm text-muted-foreground hover:text-destructive transition-colors">Remove</button>
-                            </div>
-                        ))}
+                            );
+                        })}
                         <div className="flex justify-between pt-3 border-t">
                             <span className="font-semibold">Total Planned</span>
                             <span className="font-bold text-lg">{formatCurrency(totalPlannedCost)}</span>
@@ -226,6 +363,21 @@ export default function PlanningPage() {
                         </div>
                     </div>
 
+                    {/* Date-aware warnings */}
+                    {planAnalysis && !planAnalysis.canMeetDeadlines && planAnalysis.totalMonthlySavingNeeded > 0 && (
+                        <div className="rounded-xl p-4 bg-rose-500/5 border border-rose-500/20 flex items-start gap-3">
+                            <AlertTriangle className="w-5 h-5 text-rose-500 flex-shrink-0 mt-0.5" />
+                            <div>
+                                <p className="text-sm font-medium text-rose-500">Deadline Warning</p>
+                                <p className="text-sm text-muted-foreground mt-1">
+                                    To meet all your target dates, you&apos;d need to save {formatCurrency(planAnalysis.totalMonthlySavingNeeded)}/month,
+                                    but your average surplus is only {formatCurrency(avgMonthlySurplus)}/month.
+                                    Consider extending deadlines or reducing planned costs.
+                                </p>
+                            </div>
+                        </div>
+                    )}
+
                     {/* Tips */}
                     <div className="bg-secondary/50 rounded-xl p-5">
                         <h3 className="font-medium mb-2 text-sm">💡 Tips</h3>
@@ -234,6 +386,7 @@ export default function PlanningPage() {
                             {monthsToSave > 3 && <li>• Setting aside a fixed amount each month into a savings account can help stay on track.</li>}
                             <li>• Review your budgets to see if non-essential categories can be trimmed temporarily.</li>
                             <li>• Use the &ldquo;Ask AI&rdquo; feature for personalized saving strategies.</li>
+                            <li>• Your plans are saved locally and will persist between sessions.</li>
                         </ul>
                     </div>
                 </div>

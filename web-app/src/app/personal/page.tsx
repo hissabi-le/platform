@@ -6,7 +6,8 @@ import Link from 'next/link';
 import {
     ArrowRight, TrendingUp, TrendingDown, Wallet, CreditCard,
     MessageSquare, PieChart as PieChartIcon, Target, Zap,
-    Activity, ArrowUpRight, ArrowDownRight, Flame, Percent, Sparkles
+    Activity, ArrowUpRight, ArrowDownRight, Flame, Percent, Sparkles,
+    ChevronDown, Trophy, BarChart3
 } from "lucide-react";
 
 // ─── Varied Phrases ───────────────────────────────────────────────────────
@@ -63,8 +64,67 @@ const CATEGORY_LABELS: Record<string, string> = {
     gifts: "Gifts", other: "Other",
 };
 
+const CATEGORY_EMOJIS: Record<string, string> = {
+    groceries: "🛒", dining: "🍽️", delivery: "🚚", alcohol: "🍺",
+    nightlife: "🌙", fitness: "💪", wellness: "🧘", fashion: "👗",
+    entertainment: "🎬", personal_care: "💅", rent: "🏠",
+    utilities: "💡", household: "🏡", subscriptions: "📱",
+    investments: "📈", savings: "🏦", transportation: "🚗",
+    healthcare: "🏥", education: "📚", travel: "✈️",
+    gifts: "🎁", other: "📦", salary: "💰", freelance: "💻",
+    investment_income: "📊", other_income: "💵",
+};
+
 const formatCurrency = (val: number) =>
     new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(val);
+
+// ─── Time Range Helpers ────────────────────────────────────────────────────
+type TimeRange = "week" | "month" | "3months" | "year";
+
+function getDateRange(range: TimeRange): { start: string; end: string; label: string } {
+    const today = new Date();
+    const end = today.toISOString().split("T")[0]!;
+    const d = new Date(today);
+    switch (range) {
+        case "week":
+            d.setDate(d.getDate() - 7);
+            return { start: d.toISOString().split("T")[0]!, end, label: "This Week" };
+        case "month":
+            d.setDate(1);
+            return { start: d.toISOString().split("T")[0]!, end, label: "This Month" };
+        case "3months":
+            d.setMonth(d.getMonth() - 3);
+            return { start: d.toISOString().split("T")[0]!, end, label: "3 Months" };
+        case "year":
+            d.setFullYear(d.getFullYear() - 1);
+            return { start: d.toISOString().split("T")[0]!, end, label: "1 Year" };
+    }
+}
+
+function TimeRangeSelector({ value, onChange }: { value: TimeRange; onChange: (v: TimeRange) => void }) {
+    const options: { value: TimeRange; label: string }[] = [
+        { value: "week", label: "Week" },
+        { value: "month", label: "Month" },
+        { value: "3months", label: "3M" },
+        { value: "year", label: "Year" },
+    ];
+    return (
+        <div className="flex bg-secondary/60 rounded-lg p-0.5 gap-0.5">
+            {options.map(o => (
+                <button
+                    key={o.value}
+                    onClick={() => onChange(o.value)}
+                    className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all ${value === o.value
+                        ? "bg-background text-foreground shadow-sm"
+                        : "text-muted-foreground hover:text-foreground"
+                        }`}
+                >
+                    {o.label}
+                </button>
+            ))}
+        </div>
+    );
+}
 
 // ─── SVG Pie Chart ─────────────────────────────────────────────────────────
 function DonutChart({ data }: { data: { category: string; total: number }[] }) {
@@ -130,16 +190,17 @@ function DonutChart({ data }: { data: { category: string; total: number }[] }) {
             </div>
             <div className="grid grid-cols-2 gap-x-4 sm:gap-x-6 gap-y-2 text-sm w-full sm:w-auto">
                 {data.slice(0, 8).map((d, i) => (
-                    <div
+                    <Link
                         key={d.category}
-                        className={`flex items-center gap-2 cursor-pointer rounded-md px-1 py-0.5 transition-colors ${hovered === i ? 'bg-secondary' : ''}`}
+                        href={`/personal/transactions?category=${d.category}`}
+                        className={`flex items-center gap-2 cursor-pointer rounded-md px-1 py-0.5 transition-colors hover:bg-secondary ${hovered === i ? 'bg-secondary' : ''}`}
                         onMouseEnter={() => setHovered(i)}
                         onMouseLeave={() => setHovered(null)}
                     >
                         <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: CATEGORY_COLORS[d.category] || "#737373" }} />
                         <span className="text-muted-foreground truncate">{CATEGORY_LABELS[d.category] || d.category}</span>
                         <span className="font-medium ml-auto">{Math.round((d.total / total) * 100)}%</span>
-                    </div>
+                    </Link>
                 ))}
             </div>
         </div>
@@ -205,15 +266,90 @@ function SavingsGauge({ rate }: { rate: number }) {
     );
 }
 
+// ─── Top Spending Categories ────────────────────────────────────────────────
+function TopSpendingWidget({ data, range }: { data: { category: string; total: number }[]; range: string }) {
+    const [showAll, setShowAll] = useState(false);
+    const total = data.reduce((s, d) => s + d.total, 0);
+    if (!data.length) return <p className="text-muted-foreground text-sm py-4 text-center">No spending data for this period.</p>;
+
+    const display = showAll ? data : data.slice(0, 5);
+    const maxSpend = data[0]?.total ?? 1;
+
+    return (
+        <div className="space-y-3">
+            {display.map((d, i) => {
+                const pct = total > 0 ? Math.round((d.total / total) * 100) : 0;
+                const barW = (d.total / maxSpend) * 100;
+                return (
+                    <Link
+                        key={d.category}
+                        href={`/personal/transactions?category=${d.category}`}
+                        className="group flex items-center gap-3 p-2 rounded-xl hover:bg-secondary/60 transition-colors"
+                    >
+                        <div className="w-8 h-8 rounded-lg flex items-center justify-center text-base flex-shrink-0"
+                            style={{ backgroundColor: `${CATEGORY_COLORS[d.category] || "#737373"}20` }}>
+                            <span role="img">{CATEGORY_EMOJIS[d.category] || "📦"}</span>
+                        </div>
+                        <div className="flex-1 min-w-0">
+                            <div className="flex justify-between items-baseline mb-1">
+                                <span className="text-sm font-medium truncate">{CATEGORY_LABELS[d.category] || d.category}</span>
+                                <span className="text-sm font-semibold ml-2 flex-shrink-0">{formatCurrency(d.total)}</span>
+                            </div>
+                            <div className="h-1.5 bg-secondary/80 rounded-full overflow-hidden">
+                                <div
+                                    className="h-full rounded-full transition-all duration-700"
+                                    style={{
+                                        width: `${barW}%`,
+                                        backgroundColor: CATEGORY_COLORS[d.category] || "#737373",
+                                    }}
+                                />
+                            </div>
+                        </div>
+                        <span className="text-xs text-muted-foreground w-10 text-right flex-shrink-0">{pct}%</span>
+                    </Link>
+                );
+            })}
+            {data.length > 5 && (
+                <button
+                    onClick={() => setShowAll(!showAll)}
+                    className="w-full text-center text-sm text-primary hover:underline flex items-center justify-center gap-1 py-2"
+                >
+                    {showAll ? "Show Less" : `See All ${data.length} Categories`}
+                    <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showAll ? "rotate-180" : ""}`} />
+                </button>
+            )}
+        </div>
+    );
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // MAIN PAGE
 // ═══════════════════════════════════════════════════════════════════════════
 export default function PersonalDashboard() {
+    // ── State ──
+    const [chartRange, setChartRange] = useState<TimeRange>("month");
+    const chartDates = getDateRange(chartRange);
+
     // ── Data fetching ──
     const { data: summaryData } = useQuery({ queryKey: ["personal", "summary"], queryFn: () => api.personal.getSummary() });
     const { data: insights, isLoading } = useQuery({ queryKey: ["personal", "insights"], queryFn: () => api.personal.getInsights() });
-    const { data: breakdownData } = useQuery({ queryKey: ["personal", "breakdown"], queryFn: () => api.personal.getCategoryBreakdown() });
+    const { data: breakdownData } = useQuery({
+        queryKey: ["personal", "breakdown", chartRange],
+        queryFn: () => api.personal.getCategoryBreakdown(chartDates.start, chartDates.end),
+    });
     const { data: trendsData } = useQuery({ queryKey: ["personal", "trends"], queryFn: () => api.personal.getTrends(12) });
+    const { data: topSpendingData } = useQuery({
+        queryKey: ["personal", "top-spending", chartRange],
+        queryFn: () => api.personal.getCategoryBreakdown(chartDates.start, chartDates.end),
+    });
+    const { data: incomeBreakdown } = useQuery({
+        queryKey: ["personal", "income-breakdown"],
+        queryFn: () => api.personal.getCategoryBreakdown(undefined, undefined, "income"),
+    });
+    const { data: recentEntries } = useQuery({
+        queryKey: ["personal", "recent-entries"],
+        queryFn: () => api.personal.listEntries({ limit: 50 }),
+    });
 
     // ── Derived values ──
     const income = summaryData?.income ?? 0;
@@ -223,6 +359,30 @@ export default function PersonalDashboard() {
     const today = new Date();
     const daysPassed = today.getDate();
     const dailyBurn = daysPassed > 0 ? expense / daysPassed : 0;
+
+    // Expense velocity: projected vs. last month
+    const daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
+    const projectedMonthly = dailyBurn * daysInMonth;
+
+    // Largest single expense this month
+    const largestExpense = useMemo(() => {
+        if (!recentEntries) return null;
+        const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+        const expenses = recentEntries.filter(
+            e => e.entry_type === "expense" && new Date(e.entry_date) >= monthStart
+        );
+        if (!expenses.length) return null;
+        return expenses.reduce((max, e) => e.amount > max.amount ? e : max, expenses[0]!);
+    }, [recentEntries]);
+
+    // Streak: days since last expense
+    const streakDays = useMemo(() => {
+        if (!recentEntries) return 0;
+        const lastExpense = recentEntries.find(e => e.entry_type === "expense");
+        if (!lastExpense) return 0;
+        const diff = Math.floor((today.getTime() - new Date(lastExpense.entry_date).getTime()) / (1000 * 60 * 60 * 24));
+        return diff;
+    }, [recentEntries]);
 
     // ── Phrases (memoized per mount) ──
     const greeting = useMemo(() => pickRandom(GREETINGS), []);
@@ -305,10 +465,13 @@ export default function PersonalDashboard() {
 
             {/* ───── CHARTS ROW ───── */}
             <section className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {/* Pie Chart */}
+                {/* Pie Chart with Time Range */}
                 <div className="rounded-2xl border bg-card p-4 sm:p-6 shadow-sm">
-                    <h2 className="text-lg font-semibold mb-1">Where Your Money Goes</h2>
-                    <p className="text-sm text-muted-foreground mb-5">This shows your expense breakdown by category. Hover over a slice to see the exact amount.</p>
+                    <div className="flex items-center justify-between mb-1">
+                        <h2 className="text-lg font-semibold">Where Your Money Goes</h2>
+                        <TimeRangeSelector value={chartRange} onChange={setChartRange} />
+                    </div>
+                    <p className="text-sm text-muted-foreground mb-5">Expense breakdown · {chartDates.label}</p>
                     {breakdownData?.breakdown && breakdownData.breakdown.length > 0 ? (
                         <DonutChart data={breakdownData.breakdown} />
                     ) : (
@@ -316,16 +479,31 @@ export default function PersonalDashboard() {
                     )}
                 </div>
 
-                {/* Monthly Histogram */}
+                {/* Top Spending Categories */}
                 <div className="rounded-2xl border bg-card p-4 sm:p-6 shadow-sm">
-                    <h2 className="text-lg font-semibold mb-1">Monthly Income vs. Expenses</h2>
-                    <p className="text-sm text-muted-foreground mb-5">Compare your earning and spending patterns month-over-month. Taller green bars = more income.</p>
-                    {trendsData?.trends && trendsData.trends.length > 0 ? (
-                        <MonthlyBarChart data={trendsData.trends} />
-                    ) : (
-                        <p className="text-muted-foreground text-sm py-8 text-center">Keep logging entries to see your monthly trends appear here.</p>
-                    )}
+                    <div className="flex items-center justify-between mb-1">
+                        <div className="flex items-center gap-2">
+                            <Trophy className="w-5 h-5 text-amber-500" />
+                            <h2 className="text-lg font-semibold">Top Spending</h2>
+                        </div>
+                    </div>
+                    <p className="text-sm text-muted-foreground mb-4">Your biggest spending categories · {chartDates.label}. Tap a category to see its transactions.</p>
+                    <TopSpendingWidget
+                        data={topSpendingData?.breakdown ?? []}
+                        range={chartDates.label}
+                    />
                 </div>
+            </section>
+
+            {/* ───── MONTHLY TRENDS ───── */}
+            <section className="rounded-2xl border bg-card p-4 sm:p-6 shadow-sm">
+                <h2 className="text-lg font-semibold mb-1">Monthly Income vs. Expenses</h2>
+                <p className="text-sm text-muted-foreground mb-5">Compare your earning and spending patterns month-over-month.</p>
+                {trendsData?.trends && trendsData.trends.length > 0 ? (
+                    <MonthlyBarChart data={trendsData.trends} />
+                ) : (
+                    <p className="text-muted-foreground text-sm py-8 text-center">Keep logging entries to see your monthly trends appear here.</p>
+                )}
             </section>
 
             {/* ───── WEEKLY INSIGHTS ───── */}
@@ -387,7 +565,7 @@ export default function PersonalDashboard() {
             </section>
 
             {/* ───── ADVANCED ANALYTICS ───── */}
-            <section className="grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-6">
+            <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-5">
                 {/* Savings Rate */}
                 <div className="rounded-2xl border bg-card p-4 sm:p-6 shadow-sm text-center">
                     <h3 className="text-sm font-semibold text-muted-foreground mb-3 flex items-center justify-center gap-2">
@@ -396,33 +574,98 @@ export default function PersonalDashboard() {
                     <SavingsGauge rate={savingsRate} />
                     <p className="text-xs text-muted-foreground mt-3">
                         {savingsRate >= 20
-                            ? "Excellent! You're saving more than 20% of your income. Financial experts recommend this level."
+                            ? "Excellent! Saving more than 20% 🎯"
                             : savingsRate >= 10
-                                ? "Decent savings rate. Try to push above 20% for better financial health."
-                                : "Low savings rate — consider reducing non-essential spending to build your safety net."}
+                                ? "Decent — try to push above 20%"
+                                : "Low savings — reduce non-essentials"}
                     </p>
                 </div>
                 {/* Daily Burn Rate */}
                 <div className="rounded-2xl border bg-card p-4 sm:p-6 shadow-sm text-center">
                     <h3 className="text-sm font-semibold text-muted-foreground mb-3 flex items-center justify-center gap-2">
-                        <Flame className="w-4 h-4" /> Daily Burn Rate
+                        <Flame className="w-4 h-4" /> Daily Burn
                     </h3>
-                    <p className="text-4xl font-bold mt-4 mb-2">{formatCurrency(dailyBurn)}</p>
-                    <p className="text-sm text-muted-foreground">per day this month</p>
-                    <p className="text-xs text-muted-foreground mt-3">
-                        This is how much you&apos;re spending on average each day. Multiply by 30 to estimate your monthly cost of living ({formatCurrency(dailyBurn * 30)}).
+                    <p className="text-3xl font-bold mt-4 mb-1">{formatCurrency(dailyBurn)}</p>
+                    <p className="text-sm text-muted-foreground">per day</p>
+                    <p className="text-xs text-muted-foreground mt-2">
+                        Projected: {formatCurrency(projectedMonthly)}/mo
                     </p>
                 </div>
-                {/* Income vs Expense Trend */}
+                {/* Largest Transaction */}
                 <div className="rounded-2xl border bg-card p-4 sm:p-6 shadow-sm text-center">
                     <h3 className="text-sm font-semibold text-muted-foreground mb-3 flex items-center justify-center gap-2">
-                        <Activity className="w-4 h-4" /> Monthly Trend
+                        <BarChart3 className="w-4 h-4" /> Biggest Expense
+                    </h3>
+                    {largestExpense ? (
+                        <>
+                            <p className="text-3xl font-bold mt-4 mb-1 text-rose-500">{formatCurrency(largestExpense.amount)}</p>
+                            <p className="text-sm font-medium truncate">{largestExpense.vendor || largestExpense.description || largestExpense.category}</p>
+                            <p className="text-xs text-muted-foreground mt-1">
+                                <span role="img">{CATEGORY_EMOJIS[largestExpense.category] || "📦"}</span>{" "}
+                                {CATEGORY_LABELS[largestExpense.category] || largestExpense.category}
+                            </p>
+                        </>
+                    ) : (
+                        <p className="text-muted-foreground text-sm mt-6">No expenses yet</p>
+                    )}
+                </div>
+                {/* Spending Streak */}
+                <div className="rounded-2xl border bg-card p-4 sm:p-6 shadow-sm text-center">
+                    <h3 className="text-sm font-semibold text-muted-foreground mb-3 flex items-center justify-center gap-2">
+                        <Zap className="w-4 h-4" /> No-Spend Streak
+                    </h3>
+                    <p className="text-3xl font-bold mt-4 mb-1">
+                        {streakDays} <span className="text-lg font-normal text-muted-foreground">day{streakDays !== 1 ? "s" : ""}</span>
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-2">
+                        {streakDays >= 3
+                            ? "Impressive self-control! 🔥"
+                            : streakDays >= 1
+                                ? "Keep going! Every day counts 💪"
+                                : "Start a streak — skip spending today!"}
+                    </p>
+                </div>
+            </section>
+
+            {/* ───── INCOME SOURCES ───── */}
+            {incomeBreakdown?.breakdown && incomeBreakdown.breakdown.length > 0 && (
+                <section className="rounded-2xl border bg-card p-4 sm:p-6 shadow-sm">
+                    <h2 className="text-lg font-semibold mb-1">Income Sources</h2>
+                    <p className="text-sm text-muted-foreground mb-4">Where your money comes from this month.</p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                        {incomeBreakdown.breakdown.map(d => {
+                            const total = incomeBreakdown.breakdown.reduce((s, x) => s + x.total, 0);
+                            const pct = total > 0 ? Math.round((d.total / total) * 100) : 0;
+                            return (
+                                <div key={d.category} className="flex items-center gap-3 p-3 rounded-xl bg-secondary/40">
+                                    <div className="w-10 h-10 rounded-lg flex items-center justify-center text-lg"
+                                        style={{ backgroundColor: `${CATEGORY_COLORS[d.category] || "#737373"}20` }}>
+                                        <span role="img">{CATEGORY_EMOJIS[d.category] || "💵"}</span>
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                        <p className="text-sm font-medium truncate">{CATEGORY_LABELS[d.category] || d.category}</p>
+                                        <p className="text-lg font-bold text-emerald-500">{formatCurrency(d.total)}</p>
+                                    </div>
+                                    <span className="text-sm font-semibold text-muted-foreground">{pct}%</span>
+                                </div>
+                            );
+                        })}
+                    </div>
+                </section>
+            )}
+
+            {/* ───── MONTHLY TREND (compact) ───── */}
+            <section className="grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-6">
+                {/* Monthly Trend */}
+                <div className="rounded-2xl border bg-card p-4 sm:p-6 shadow-sm text-center sm:col-span-3">
+                    <h3 className="text-sm font-semibold text-muted-foreground mb-3 flex items-center justify-center gap-2">
+                        <Activity className="w-4 h-4" /> Monthly Trend (Compact)
                     </h3>
                     {trendsData?.trends && trendsData.trends.length >= 2 ? (() => {
                         const recent = trendsData.trends.slice(-6);
                         const maxV = Math.max(...recent.map(m => Math.max(m.income, m.expense)), 1);
                         return (
-                            <div className="mt-4 space-y-2">
+                            <div className="mt-4 space-y-2 max-w-xl mx-auto">
                                 {recent.map(m => (
                                     <div key={m.month} className="flex items-center gap-2 text-xs">
                                         <span className="w-12 text-muted-foreground text-right">
@@ -432,6 +675,9 @@ export default function PersonalDashboard() {
                                             <div className="bg-emerald-500 rounded-l" style={{ width: `${(m.income / maxV) * 100}%` }} />
                                             <div className="bg-rose-500 rounded-r" style={{ width: `${(m.expense / maxV) * 100}%` }} />
                                         </div>
+                                        <span className="w-20 text-muted-foreground text-right">
+                                            {formatCurrency(m.income - m.expense)}
+                                        </span>
                                     </div>
                                 ))}
                             </div>
@@ -439,9 +685,6 @@ export default function PersonalDashboard() {
                     })() : (
                         <p className="text-muted-foreground text-sm mt-6">Need at least 2 months of data.</p>
                     )}
-                    <p className="text-xs text-muted-foreground mt-3">
-                        A compact view of your income (green) vs expenses (red) over recent months.
-                    </p>
                 </div>
             </section>
 

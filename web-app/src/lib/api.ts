@@ -316,12 +316,13 @@ export const api = {
     // Entries CRUD
     createEntry: (data: PersonalEntryInput) =>
       fetchJson<PersonalEntry>(API_ENDPOINTS.PERSONAL.ENTRIES, { method: "POST", body: data }),
-    listEntries: (params?: { start_date?: string; end_date?: string; category?: string; entry_type?: string }) => {
+    listEntries: (params?: { start_date?: string; end_date?: string; category?: string; entry_type?: string; limit?: number }) => {
       const query = new URLSearchParams();
       if (params?.start_date) query.set("start_date", params.start_date);
       if (params?.end_date) query.set("end_date", params.end_date);
       if (params?.category) query.set("category", params.category);
       if (params?.entry_type) query.set("entry_type", params.entry_type);
+      if (params?.limit) query.set("limit", params.limit.toString());
       const queryStr = query.toString() ? `?${query.toString()}` : "";
       return fetchJson<PersonalEntry[]>(`${API_ENDPOINTS.PERSONAL.ENTRIES}${queryStr}`);
     },

@@ -3,18 +3,40 @@ import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
-import { ArrowLeft, Trash2, DollarSign } from "lucide-react";
+import { ArrowLeft, Trash2, DollarSign, Filter, X } from "lucide-react";
 import Link from 'next/link';
+import { useSearchParams } from "next/navigation";
 
 const CATEGORY_ICONS: Record<string, string> = {
-    salary: "💰", freelance: "💻", investment: "📈", groceries: "🛒", dining: "🍽️",
-    transportation: "🚗", housing: "🏠", utilities: "💡", entertainment: "🎬",
-    shopping: "🛍️", healthcare: "🏥", other: "📦"
+    salary: "💰", freelance: "💻", investment_income: "📊", other_income: "💵",
+    groceries: "🛒", dining: "🍽️", delivery: "🚚", alcohol: "🍺",
+    nightlife: "🌙", fitness: "💪", wellness: "🧘", fashion: "👗",
+    entertainment: "🎬", personal_care: "💅", rent: "🏠",
+    utilities: "💡", household: "🏡", subscriptions: "📱",
+    investments: "📈", savings: "🏦", transportation: "🚗",
+    healthcare: "🏥", education: "📚", travel: "✈️",
+    gifts: "🎁", other: "📦",
+};
+
+const CATEGORY_LABELS: Record<string, string> = {
+    salary: "Salary", freelance: "Freelance", investment_income: "Investment",
+    other_income: "Other Income", groceries: "Groceries", dining: "Dining Out",
+    delivery: "Delivery", alcohol: "Alcohol", nightlife: "Nightlife",
+    fitness: "Fitness", wellness: "Wellness", fashion: "Fashion",
+    entertainment: "Entertainment", personal_care: "Personal Care", rent: "Rent",
+    utilities: "Utilities", household: "Household", subscriptions: "Subscriptions",
+    investments: "Investments", savings: "Savings", transportation: "Transport",
+    healthcare: "Healthcare", education: "Education", travel: "Travel",
+    gifts: "Gifts", other: "Other",
 };
 
 export default function TransactionsPage() {
     const queryClient = useQueryClient();
+    const searchParams = useSearchParams();
+    const categoryFilter = searchParams.get("category") || "";
+
     const [isAdding, setIsAdding] = useState(false);
+    const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null);
     const [formData, setFormData] = useState({
         entry_date: new Date().toISOString().split("T")[0],
         entry_type: "expense" as "income" | "expense",
@@ -24,8 +46,8 @@ export default function TransactionsPage() {
     });
 
     const { data: entries, isLoading } = useQuery({
-        queryKey: ["personal", "entries"],
-        queryFn: () => api.personal.listEntries({}),
+        queryKey: ["personal", "entries", categoryFilter],
+        queryFn: () => api.personal.listEntries(categoryFilter ? { category: categoryFilter } : {}),
     });
 
     const createMutation = useMutation({
@@ -54,6 +76,7 @@ export default function TransactionsPage() {
         mutationFn: (id: number) => api.personal.deleteEntry(id),
         onSuccess: () => {
             toast.success("Entry deleted");
+            setDeleteConfirmId(null);
             queryClient.invalidateQueries({ queryKey: ["personal", "entries"] });
             queryClient.invalidateQueries({ queryKey: ["personal"] });
         },
@@ -85,6 +108,25 @@ export default function TransactionsPage() {
                     </button>
                 </div>
             </div>
+
+            {/* Active Category Filter Banner */}
+            {categoryFilter && (
+                <div className="flex items-center gap-2 px-4 py-3 rounded-xl bg-primary/10 border border-primary/20">
+                    <Filter className="w-4 h-4 text-primary flex-shrink-0" />
+                    <span className="text-sm font-medium">
+                        Showing: <span className="text-primary">{CATEGORY_LABELS[categoryFilter] || categoryFilter}</span>
+                    </span>
+                    <span role="img" className="text-xs ml-1">
+                        {CATEGORY_ICONS[categoryFilter] || "📦"}
+                    </span>
+                    <Link
+                        href="/personal/transactions"
+                        className="ml-auto p-1 rounded-full hover:bg-secondary transition-colors text-muted-foreground hover:text-foreground"
+                    >
+                        <X className="w-4 h-4" />
+                    </Link>
+                </div>
+            )}
 
             {/* Add Entry Form */}
             {isAdding && (
@@ -197,7 +239,7 @@ export default function TransactionsPage() {
                         {entries.map((entry) => (
                             <div key={entry.id} className="p-3 sm:p-4 bg-card border rounded-2xl flex items-center justify-between group hover:border-primary/30 transition-colors shadow-sm">
                                 <div className="flex items-center gap-3 sm:gap-4 min-w-0">
-                                    <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-secondary flex items-center justify-center text-lg sm:text-xl flex-shrink-0">
+                                    <div role="img" className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-secondary flex items-center justify-center text-lg sm:text-xl flex-shrink-0">
                                         {CATEGORY_ICONS[entry.category] || "📦"}
                                     </div>
                                     <div className="min-w-0">
@@ -205,7 +247,7 @@ export default function TransactionsPage() {
                                         <div className="flex items-center gap-1.5 sm:gap-2 text-xs text-muted-foreground flex-wrap">
                                             <span>{new Date(entry.entry_date).toLocaleDateString()}</span>
                                             <span>•</span>
-                                            <span className="capitalize truncate">{entry.category}</span>
+                                            <span className="capitalize truncate">{CATEGORY_LABELS[entry.category] || entry.category}</span>
                                         </div>
                                     </div>
                                 </div>
@@ -214,20 +256,41 @@ export default function TransactionsPage() {
                                         {entry.entry_type === 'income' ? '+' : '-'}
                                         {new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(entry.amount)}
                                     </span>
-                                    <button
-                                        onClick={() => deleteMutation.mutate(entry.id)}
-                                        className="p-2 text-muted-foreground hover:text-destructive transition-colors sm:opacity-0 sm:group-hover:opacity-100"
-                                    >
-                                        <Trash2 className="w-4 h-4" />
-                                    </button>
+                                    {deleteConfirmId === entry.id ? (
+                                        <div className="flex items-center gap-1 animate-in fade-in duration-200">
+                                            <button
+                                                onClick={() => deleteMutation.mutate(entry.id)}
+                                                className="px-2 py-1 text-xs bg-destructive text-destructive-foreground rounded-md hover:opacity-90 transition-opacity font-medium"
+                                            >
+                                                Delete
+                                            </button>
+                                            <button
+                                                onClick={() => setDeleteConfirmId(null)}
+                                                className="px-2 py-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                                            >
+                                                Cancel
+                                            </button>
+                                        </div>
+                                    ) : (
+                                        <button
+                                            onClick={() => setDeleteConfirmId(entry.id)}
+                                            className="p-2 text-muted-foreground hover:text-destructive transition-colors sm:opacity-0 sm:group-hover:opacity-100"
+                                        >
+                                            <Trash2 className="w-4 h-4" />
+                                        </button>
+                                    )}
                                 </div>
                             </div>
                         ))}
                     </div>
                 ) : (
                     <div className="text-center py-12 text-muted-foreground">
-                        <p>No transactions found.</p>
-                        <button onClick={() => setIsAdding(true)} className="text-primary hover:underline mt-2">Log your first entry</button>
+                        <p>{categoryFilter ? `No transactions found in "${CATEGORY_LABELS[categoryFilter] || categoryFilter}".` : "No transactions found."}</p>
+                        {categoryFilter ? (
+                            <Link href="/personal/transactions" className="text-primary hover:underline mt-2 inline-block">Clear filter</Link>
+                        ) : (
+                            <button onClick={() => setIsAdding(true)} className="text-primary hover:underline mt-2">Log your first entry</button>
+                        )}
                     </div>
                 )}
             </div>

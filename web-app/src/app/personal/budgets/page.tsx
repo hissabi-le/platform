@@ -175,7 +175,7 @@ export default function PersonalBudgetsPage() {
                         >
                             <div className="flex items-start justify-between mb-3">
                                 <div className="flex items-center gap-3">
-                                    <span className="text-3xl">
+                                    <span role="img" className="text-3xl">
                                         {CATEGORY_ICONS[budget.category] || "📦"}
                                     </span>
                                     <div>

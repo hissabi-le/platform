@@ -675,3 +675,71 @@ class PersonalRepo:
             "frequency_by_day": frequency_by_day,
             "price_trend": price_trend,
         }
+
+    # ==================== AI Chat Context ====================
+
+    async def get_chat_context(
+        self,
+        session: AsyncSession,
+        user_id: int,
+    ) -> Dict[str, Any]:
+        """Build a rich but token-efficient context snapshot for the AI chat."""
+        today = date.today()
+        month_start = date(today.year, today.month, 1)
+        week_ago = today - timedelta(days=7)
+
+        # 1. This month summary
+        summary = await self.get_summary(session, user_id, month_start, today)
+
+        # 2. Top 5 expense categories this month
+        categories = await self.get_category_breakdown(
+            session, user_id, month_start, today, "expense"
+        )
+        top5 = categories[:5]
+        total_expense = float(summary.get("expense", 0))
+
+        category_lines = []
+        for c in top5:
+            pct = round((c["total"] / total_expense) * 100, 1) if total_expense > 0 else 0
+            category_lines.append(f"  {c['category']}: ${c['total']:.0f} ({pct}%)")
+
+        # 3. Budget progress
+        budget_progress = await self.get_budget_progress(session, user_id)
+        budget_lines = []
+        for b in budget_progress:
+            status = "⚠️ OVER" if b["percent_used"] > 100 else f"{b['percent_used']:.0f}%"
+            budget_lines.append(
+                f"  {b['category']}: ${b['spent']:.0f}/${b['monthly_limit']:.0f} ({status})"
+            )
+
+        # 4. Monthly trends (last 3 months)
+        trends = await self.get_monthly_trends(session, user_id, months=3)
+        trend_lines = []
+        for t in trends:
+            net = t.get("income", 0) - t.get("expense", 0)
+            trend_lines.append(
+                f"  {t['month']}: income=${t.get('income', 0):.0f}, expense=${t.get('expense', 0):.0f}, net=${net:.0f}"
+            )
+
+        # 5. Last 10 transactions (recent)
+        recent = await self.list_entries(session, user_id, limit=10)
+        txn_lines = []
+        for e in recent:
+            sign = "+" if e.entry_type == "income" else "-"
+            desc = e.description or e.vendor or e.category
+            txn_lines.append(f"  {e.entry_date} {sign}${float(e.amount):.0f} {desc} [{e.category}]")
+
+        # 6. This week spending
+        week_summary = await self.get_summary(session, user_id, week_ago, today)
+
+        return {
+            "this_month_income": float(summary.get("income", 0)),
+            "this_month_expense": total_expense,
+            "this_month_net": float(summary.get("net", 0)),
+            "this_week_expense": float(week_summary.get("expense", 0)),
+            "this_week_income": float(week_summary.get("income", 0)),
+            "top5_categories": "\n".join(category_lines) if category_lines else "  No expenses yet",
+            "budget_status": "\n".join(budget_lines) if budget_lines else "  No budgets set",
+            "monthly_trends": "\n".join(trend_lines) if trend_lines else "  No history yet",
+            "recent_transactions": "\n".join(txn_lines) if txn_lines else "  No transactions yet",
+        }

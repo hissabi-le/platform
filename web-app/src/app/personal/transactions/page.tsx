@@ -67,28 +67,28 @@ export default function TransactionsPage() {
     const isExpense = formData.entry_type === "expense";
 
     return (
-        <div className="space-y-8 max-w-4xl mx-auto animate-in fade-in duration-500">
-            <div className="flex items-center gap-4">
-                <Link href="/personal" className="p-2 -ml-2 rounded-full hover:bg-secondary transition-colors text-muted-foreground hover:text-foreground">
-                    <ArrowLeft className="w-6 h-6" />
+        <div className="space-y-6 sm:space-y-8 max-w-4xl mx-auto animate-in fade-in duration-500">
+            <div className="flex items-center gap-3 sm:gap-4">
+                <Link href="/personal" className="p-2 -ml-2 rounded-full hover:bg-secondary transition-colors text-muted-foreground hover:text-foreground flex-shrink-0">
+                    <ArrowLeft className="w-5 h-5 sm:w-6 sm:h-6" />
                 </Link>
-                <div>
-                    <h1 className="text-3xl font-bold bg-gradient-to-r from-foreground to-muted-foreground bg-clip-text text-transparent">Transactions</h1>
-                    <p className="text-muted-foreground">Log and review your financial activity.</p>
+                <div className="min-w-0">
+                    <h1 className="text-2xl sm:text-3xl font-bold bg-gradient-to-r from-foreground to-muted-foreground bg-clip-text text-transparent">Transactions</h1>
+                    <p className="text-muted-foreground text-sm">Log and review your financial activity.</p>
                 </div>
-                <div className="ml-auto">
+                <div className="ml-auto flex-shrink-0">
                     <button
                         onClick={() => setIsAdding(!isAdding)}
-                        className="px-6 py-2 bg-primary text-primary-foreground rounded-full font-bold hover:opacity-90 transition-opacity shadow-lg"
+                        className="px-4 sm:px-6 py-2 bg-primary text-primary-foreground rounded-full font-bold text-sm hover:opacity-90 transition-opacity shadow-lg"
                     >
-                        + New Entry
+                        + New
                     </button>
                 </div>
             </div>
 
             {/* Add Entry Form */}
             {isAdding && (
-                <form onSubmit={handleSubmit} className="border bg-card rounded-2xl p-6 space-y-6 animate-in slide-in-from-top-4 shadow-sm">
+                <form onSubmit={handleSubmit} className="border bg-card rounded-2xl p-4 sm:p-6 space-y-4 sm:space-y-6 animate-in slide-in-from-top-4 shadow-sm">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         {/* Type Toggle */}
                         <div>
@@ -195,29 +195,28 @@ export default function TransactionsPage() {
                 ) : entries && entries.length > 0 ? (
                     <div className="grid gap-3">
                         {entries.map((entry) => (
-                            <div key={entry.id} className="p-4 bg-card border rounded-2xl flex items-center justify-between group hover:border-primary/30 transition-colors shadow-sm">
-                                <div className="flex items-center gap-4">
-                                    <div className="w-10 h-10 rounded-full bg-secondary flex items-center justify-center text-xl">
+                            <div key={entry.id} className="p-3 sm:p-4 bg-card border rounded-2xl flex items-center justify-between group hover:border-primary/30 transition-colors shadow-sm">
+                                <div className="flex items-center gap-3 sm:gap-4 min-w-0">
+                                    <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-secondary flex items-center justify-center text-lg sm:text-xl flex-shrink-0">
                                         {CATEGORY_ICONS[entry.category] || "📦"}
                                     </div>
-                                    <div>
-                                        <p className="font-medium">{entry.vendor || entry.category || "Entry"}</p>
-                                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                                    <div className="min-w-0">
+                                        <p className="font-medium text-sm sm:text-base truncate">{entry.vendor || entry.category || "Entry"}</p>
+                                        <div className="flex items-center gap-1.5 sm:gap-2 text-xs text-muted-foreground flex-wrap">
                                             <span>{new Date(entry.entry_date).toLocaleDateString()}</span>
                                             <span>•</span>
-                                            <span className="capitalize">{entry.category}</span>
-                                            {entry.vendor && <span>• {entry.vendor}</span>}
+                                            <span className="capitalize truncate">{entry.category}</span>
                                         </div>
                                     </div>
                                 </div>
-                                <div className="flex items-center gap-4">
-                                    <span className={`font-mono font-medium ${entry.entry_type === 'income' ? 'text-emerald-500' : 'text-foreground'}`}>
+                                <div className="flex items-center gap-2 sm:gap-4 flex-shrink-0">
+                                    <span className={`font-mono font-medium text-sm sm:text-base ${entry.entry_type === 'income' ? 'text-emerald-500' : 'text-foreground'}`}>
                                         {entry.entry_type === 'income' ? '+' : '-'}
                                         {new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(entry.amount)}
                                     </span>
                                     <button
                                         onClick={() => deleteMutation.mutate(entry.id)}
-                                        className="p-2 text-muted-foreground hover:text-destructive transition-colors opacity-0 group-hover:opacity-100"
+                                        className="p-2 text-muted-foreground hover:text-destructive transition-colors sm:opacity-0 sm:group-hover:opacity-100"
                                     >
                                         <Trash2 className="w-4 h-4" />
                                     </button>
@@ -232,6 +231,6 @@ export default function TransactionsPage() {
                     </div>
                 )}
             </div>
-        </div>
+        </div >
     );
 }

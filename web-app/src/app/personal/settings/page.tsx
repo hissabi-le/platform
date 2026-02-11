@@ -3,7 +3,8 @@ import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
-import { Trash2, Plus, CreditCard, Banknote, Landmark } from "lucide-react";
+import { Trash2, Plus, CreditCard, Banknote, Landmark, ArrowLeft } from "lucide-react";
+import Link from "next/link";
 
 export default function PersonalSettings() {
     const queryClient = useQueryClient();
@@ -51,50 +52,55 @@ export default function PersonalSettings() {
     };
 
     return (
-        <div className="max-w-2xl mx-auto space-y-12 animate-in fade-in duration-500">
-            <div>
-                <h1 className="text-3xl font-bold text-white mb-2">Settings</h1>
-                <p className="text-slate-400">Manage your accounts and preferences.</p>
+        <div className="max-w-2xl mx-auto space-y-8 sm:space-y-12 animate-in fade-in duration-500">
+            {/* Header */}
+            <div className="flex items-center gap-3 sm:gap-4">
+                <Link href="/personal" className="p-2 rounded-full hover:bg-secondary transition-colors text-muted-foreground hover:text-foreground">
+                    <ArrowLeft className="w-5 h-5" />
+                </Link>
+                <div>
+                    <h1 className="text-2xl sm:text-3xl font-bold bg-gradient-to-r from-foreground to-muted-foreground bg-clip-text text-transparent">Settings</h1>
+                    <p className="text-muted-foreground text-sm sm:text-base">Manage your accounts and preferences.</p>
+                </div>
             </div>
 
             {/* ACCOUNTS SECTION */}
-            <section className="space-y-6">
+            <section className="space-y-4 sm:space-y-6">
                 <div className="flex items-center justify-between">
-                    <h2 className="text-xl font-semibold text-white">Accounts & Assets</h2>
+                    <h2 className="text-lg sm:text-xl font-semibold">Accounts & Assets</h2>
                     <button
                         onClick={() => setIsAdding(!isAdding)}
-                        className="flex items-center gap-2 text-purple-400 hover:text-purple-300 font-medium transition-colors"
+                        className="flex items-center gap-2 text-primary hover:text-primary/80 font-medium transition-colors text-sm"
                     >
                         <Plus className="w-4 h-4" /> Add Account
                     </button>
                 </div>
 
-                <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden">
+                <div className="border bg-card rounded-2xl overflow-hidden shadow-sm">
                     {isLoading ? (
-                        <div className="p-6 text-slate-500">Loading accounts...</div>
+                        <div className="p-6 text-muted-foreground">Loading accounts...</div>
                     ) : accounts && accounts.length > 0 ? (
-                        <div className="divide-y divide-slate-800">
+                        <div className="divide-y">
                             {accounts.map((acc) => (
-                                <div key={acc.id} className="p-4 flex items-center justify-between group">
-                                    <div className="flex items-center gap-4">
-                                        <div className="w-10 h-10 rounded-full bg-slate-800 flex items-center justify-center text-slate-400">
+                                <div key={acc.id} className="p-3 sm:p-4 flex items-center justify-between group">
+                                    <div className="flex items-center gap-3 sm:gap-4 min-w-0">
+                                        <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-secondary flex items-center justify-center text-muted-foreground flex-shrink-0">
                                             {getIcon(acc.type)}
                                         </div>
-                                        <div>
-                                            <p className="font-semibold text-white">{acc.name}</p>
-                                            <p className="text-xs text-slate-500 capitalize">{acc.type}</p>
+                                        <div className="min-w-0">
+                                            <p className="font-semibold truncate">{acc.name}</p>
+                                            <p className="text-xs text-muted-foreground capitalize">{acc.type}</p>
                                         </div>
                                     </div>
-                                    <div className="flex items-center gap-6">
+                                    <div className="flex items-center gap-3 sm:gap-6 flex-shrink-0">
                                         <div className="text-right">
-                                            <span className="block font-mono font-medium text-slate-200">
+                                            <span className="block font-mono font-medium text-sm sm:text-base">
                                                 {new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(acc.balance)}
                                             </span>
-                                            {/* Note: Balance editing not implemented yet, just display */}
                                         </div>
                                         <button
                                             onClick={() => deleteMutation.mutate(acc.id)}
-                                            className="text-slate-600 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100"
+                                            className="text-muted-foreground hover:text-destructive transition-colors sm:opacity-0 sm:group-hover:opacity-100"
                                             title="Delete Account"
                                         >
                                             <Trash2 className="w-4 h-4" />
@@ -104,45 +110,45 @@ export default function PersonalSettings() {
                             ))}
                         </div>
                     ) : (
-                        <div className="p-8 text-center text-slate-500">
+                        <div className="p-6 sm:p-8 text-center text-muted-foreground text-sm sm:text-base">
                             No accounts added yet. Add your bank accounts, cash, or savings to track your net worth.
                         </div>
                     )}
                 </div>
 
                 {isAdding && (
-                    <form onSubmit={handleSubmit} className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-4 animate-in slide-in-from-top-4 duration-300">
-                        <h3 className="font-semibold text-white">Add New Account</h3>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <form onSubmit={handleSubmit} className="border bg-card rounded-2xl p-4 sm:p-6 space-y-4 animate-in slide-in-from-top-4 duration-300 shadow-sm">
+                        <h3 className="font-semibold">Add New Account</h3>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                             <div>
-                                <label className="block text-xs font-medium text-slate-400 mb-1">Account Name</label>
+                                <label className="block text-xs font-medium text-muted-foreground mb-1">Account Name</label>
                                 <input
                                     type="text"
                                     value={newAccount.name}
                                     onChange={e => setNewAccount({ ...newAccount, name: e.target.value })}
                                     placeholder="e.g. Chase Checking"
-                                    className="w-full px-4 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white focus:outline-none focus:border-purple-500"
+                                    className="w-full px-4 py-2 bg-background border rounded-xl text-foreground focus:outline-none focus:ring-2 focus:ring-primary transition"
                                     required
                                 />
                             </div>
                             <div>
-                                <label className="block text-xs font-medium text-slate-400 mb-1">Current Balance</label>
+                                <label className="block text-xs font-medium text-muted-foreground mb-1">Current Balance</label>
                                 <input
                                     type="number"
                                     value={newAccount.balance}
                                     onChange={e => setNewAccount({ ...newAccount, balance: e.target.value })}
                                     placeholder="0.00"
                                     step="0.01"
-                                    className="w-full px-4 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white focus:outline-none focus:border-purple-500"
+                                    className="w-full px-4 py-2 bg-background border rounded-xl text-foreground focus:outline-none focus:ring-2 focus:ring-primary transition"
                                     required
                                 />
                             </div>
                             <div>
-                                <label className="block text-xs font-medium text-slate-400 mb-1">Type</label>
+                                <label className="block text-xs font-medium text-muted-foreground mb-1">Type</label>
                                 <select
                                     value={newAccount.type}
                                     onChange={e => setNewAccount({ ...newAccount, type: e.target.value })}
-                                    className="w-full px-4 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white focus:outline-none focus:border-purple-500"
+                                    className="w-full px-4 py-2 bg-background border rounded-xl text-foreground focus:outline-none focus:ring-2 focus:ring-primary transition"
                                 >
                                     <option value="checking">Checking</option>
                                     <option value="savings">Savings</option>
@@ -157,14 +163,14 @@ export default function PersonalSettings() {
                             <button
                                 type="button"
                                 onClick={() => setIsAdding(false)}
-                                className="px-4 py-2 text-slate-400 hover:text-white transition-colors text-sm"
+                                className="px-4 py-2 text-muted-foreground hover:text-foreground transition-colors text-sm"
                             >
                                 Cancel
                             </button>
                             <button
                                 type="submit"
                                 disabled={createMutation.isPending}
-                                className="px-6 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-xl font-medium text-sm transition-colors"
+                                className="px-6 py-2 bg-primary text-primary-foreground rounded-xl font-medium text-sm hover:opacity-90 transition-all"
                             >
                                 {createMutation.isPending ? "Adding..." : "Add Account"}
                             </button>

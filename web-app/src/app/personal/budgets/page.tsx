@@ -84,10 +84,10 @@ export default function PersonalBudgetsPage() {
     return (
         <div className="space-y-8">
             {/* Header */}
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div>
                     <h1 className="text-2xl font-bold">Budget Goals</h1>
-                    <p className="text-muted-foreground">
+                    <p className="text-muted-foreground text-sm sm:text-base">
                         Set monthly spending limits and track your progress
                     </p>
                 </div>
@@ -112,7 +112,7 @@ export default function PersonalBudgetsPage() {
                 <div className="bg-card rounded-xl border p-6">
                     <h2 className="text-lg font-semibold mb-4">Create New Budget</h2>
                     <form onSubmit={handleSubmit} className="space-y-4">
-                        <div className="grid grid-cols-2 gap-4">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                             <div>
                                 <label className="block text-sm font-medium mb-1">Category</label>
                                 <select
@@ -189,7 +189,7 @@ export default function PersonalBudgetsPage() {
                                 </div>
                                 <button
                                     onClick={() => deleteBudgetMutation.mutate(budget.category)}
-                                    className="opacity-0 group-hover:opacity-100 p-1 text-muted-foreground hover:text-red-500 transition-all"
+                                    className="sm:opacity-0 sm:group-hover:opacity-100 p-1 text-muted-foreground hover:text-red-500 transition-all"
                                     title="Delete budget"
                                 >
                                     ✕

@@ -51,30 +51,30 @@ export default function PersonalLayout({ children }: { children: React.ReactNode
 
                 {/* Header */}
                 <header className="sticky top-0 z-50 border-b bg-background/80 backdrop-blur-sm">
-                    <div className="flex items-center justify-between mx-auto max-w-7xl w-full px-6 py-4">
-                        <Link href="/personal" className="flex items-center gap-3 group">
-                            <div className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center group-hover:scale-105 transition-transform">
-                                <span className="text-primary-foreground font-bold text-lg">H</span>
+                    <div className="flex items-center justify-between mx-auto max-w-7xl w-full px-4 sm:px-6 py-3 sm:py-4">
+                        <Link href="/personal" className="flex items-center gap-2.5 group">
+                            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-primary flex items-center justify-center group-hover:scale-105 transition-transform flex-shrink-0">
+                                <span className="text-primary-foreground font-bold text-base sm:text-lg">H</span>
                             </div>
-                            <span className="text-xl font-bold bg-gradient-to-r from-foreground to-muted-foreground bg-clip-text text-transparent">
+                            <span className="hidden sm:inline text-xl font-bold bg-gradient-to-r from-foreground to-muted-foreground bg-clip-text text-transparent">
                                 Hisabi Personal
                             </span>
                         </Link>
 
-                        <div className="flex items-center gap-4">
+                        <div className="flex items-center gap-2 sm:gap-4">
                             <ThemeToggle />
                             <Link href="/personal/settings" className="p-2 rounded-full hover:bg-secondary transition-colors text-muted-foreground hover:text-foreground group relative">
                                 <Settings className="w-5 h-5" />
-                                <span className="absolute top-full right-0 mt-2 text-xs bg-popover text-popover-foreground px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap border shadow-sm">Settings</span>
+                                <span className="absolute top-full right-0 mt-2 text-xs bg-popover text-popover-foreground px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap border shadow-sm hidden sm:block">Settings</span>
                             </Link>
-                            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-500 to-indigo-600 flex items-center justify-center text-white text-sm font-bold border-2 border-background shadow-lg shadow-purple-900/20">
+                            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-gradient-to-br from-purple-500 to-indigo-600 flex items-center justify-center text-white text-xs sm:text-sm font-bold border-2 border-background shadow-lg shadow-purple-900/20">
                                 {initial}
                             </div>
                         </div>
                     </div>
                 </header>
 
-                <main className="px-6 min-h-[calc(100vh-73px)] max-w-7xl mx-auto pb-12 pt-8 w-full">
+                <main className="px-4 sm:px-6 min-h-[calc(100vh-65px)] sm:min-h-[calc(100vh-73px)] max-w-7xl mx-auto pb-12 pt-5 sm:pt-8 w-full">
                     {children}
                 </main>
             </div>

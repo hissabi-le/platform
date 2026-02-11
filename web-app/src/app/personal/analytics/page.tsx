@@ -70,10 +70,10 @@ export default function PersonalAnalyticsPage() {
     return (
         <div className="space-y-8">
             {/* Header */}
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div>
                     <h1 className="text-2xl font-bold">Analytics</h1>
-                    <p className="text-muted-foreground">
+                    <p className="text-muted-foreground text-sm sm:text-base">
                         {summaryData
                             ? `Showing data from ${new Date(summaryData.start_date).toLocaleDateString()} to ${new Date(summaryData.end_date).toLocaleDateString()}`
                             : "Your spending insights"}
@@ -81,7 +81,7 @@ export default function PersonalAnalyticsPage() {
                 </div>
                 <Link
                     href="/personal"
-                    className="px-4 py-2 bg-secondary rounded-lg text-sm font-medium hover:bg-secondary/80 transition-colors"
+                    className="px-4 py-2 bg-secondary rounded-lg text-sm font-medium hover:bg-secondary/80 transition-colors self-start sm:self-auto"
                 >
                     ← Back
                 </Link>
@@ -165,9 +165,9 @@ export default function PersonalAnalyticsPage() {
 
                 {/* Top Spending Widget */}
                 <div className="bg-card rounded-xl border p-6">
-                    <div className="flex items-center justify-between mb-4">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
                         <h2 className="text-lg font-semibold">Top Spending</h2>
-                        <div className="flex gap-2 bg-muted rounded-lg p-1">
+                        <div className="flex gap-2 bg-muted rounded-lg p-1 self-start sm:self-auto">
                             {TIME_RANGES.map((range) => (
                                 <button
                                     key={range.value}
@@ -284,7 +284,7 @@ export default function PersonalAnalyticsPage() {
                         </div>
 
                         {/* Monthly breakdown */}
-                        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mt-4">
+                        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mt-4">
                             {trendsData.trends.slice(-6).map((month) => (
                                 <div key={month.month} className="p-3 bg-secondary/30 rounded-lg text-center">
                                     <p className="text-xs text-muted-foreground mb-1">

@@ -1,5 +1,5 @@
 "use client";
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import Link from 'next/link';
@@ -68,6 +68,7 @@ const formatCurrency = (val: number) =>
 
 // ─── SVG Pie Chart ─────────────────────────────────────────────────────────
 function DonutChart({ data }: { data: { category: string; total: number }[] }) {
+    const [hovered, setHovered] = useState<number | null>(null);
     const total = data.reduce((s, d) => s + d.total, 0);
     if (total === 0) return <p className="text-muted-foreground text-sm">No spending data yet.</p>;
 
@@ -92,28 +93,49 @@ function DonutChart({ data }: { data: { category: string; total: number }[] }) {
         return `M ${s.x} ${s.y} A ${r} ${r} 0 ${large} 1 ${e.x} ${e.y}`;
     };
 
+    const hoveredSlice = hovered !== null ? slices[hovered] : null;
+
     return (
-        <div className="flex flex-col sm:flex-row items-center gap-6">
-            <svg viewBox="0 0 200 200" className="w-48 h-48 flex-shrink-0">
-                {slices.map((sl, i) => (
-                    <path
-                        key={i}
-                        d={arcPath(100, 100, 80, sl.startAngle, sl.endAngle - 0.5)}
-                        fill="none"
-                        stroke={sl.color}
-                        strokeWidth="28"
-                        strokeLinecap="round"
-                        className="transition-all duration-500 hover:opacity-80"
+        <div className="flex flex-col sm:flex-row items-center gap-4 sm:gap-6">
+            <div className="relative flex-shrink-0">
+                <svg viewBox="0 0 200 200" className="w-36 h-36 sm:w-48 sm:h-48">
+                    {slices.map((sl, i) => (
+                        <path
+                            key={i}
+                            d={arcPath(100, 100, 80, sl.startAngle, sl.endAngle - 0.5)}
+                            fill="none"
+                            stroke={sl.color}
+                            strokeWidth={hovered === i ? "34" : "28"}
+                            strokeLinecap="round"
+                            className="transition-all duration-200 cursor-pointer"
+                            style={{ opacity: hovered !== null && hovered !== i ? 0.4 : 1 }}
+                            onMouseEnter={() => setHovered(i)}
+                            onMouseLeave={() => setHovered(null)}
+                        />
+                    ))}
+                    <text x="100" y="95" textAnchor="middle" className="fill-foreground text-lg font-bold" fontSize="18">
+                        {hoveredSlice ? formatCurrency(hoveredSlice.total) : formatCurrency(total)}
+                    </text>
+                    <text x="100" y="115" textAnchor="middle" className="fill-muted-foreground" fontSize="11">
+                        {hoveredSlice ? (CATEGORY_LABELS[hoveredSlice.category] || hoveredSlice.category) : "Total Spent"}
+                    </text>
+                </svg>
+                {/* Tooltip */}
+                {hoveredSlice && (
+                    <div className="absolute -top-2 left-1/2 -translate-x-1/2 -translate-y-full bg-popover text-popover-foreground border rounded-lg px-3 py-2 shadow-lg text-sm whitespace-nowrap z-20 pointer-events-none">
+                        <p className="font-semibold">{CATEGORY_LABELS[hoveredSlice.category] || hoveredSlice.category}</p>
+                        <p>{formatCurrency(hoveredSlice.total)} · {Math.round((hoveredSlice.total / total) * 100)}%</p>
+                    </div>
+                )}
+            </div>
+            <div className="grid grid-cols-2 gap-x-4 sm:gap-x-6 gap-y-2 text-sm w-full sm:w-auto">
+                {data.slice(0, 8).map((d, i) => (
+                    <div
+                        key={d.category}
+                        className={`flex items-center gap-2 cursor-pointer rounded-md px-1 py-0.5 transition-colors ${hovered === i ? 'bg-secondary' : ''}`}
+                        onMouseEnter={() => setHovered(i)}
+                        onMouseLeave={() => setHovered(null)}
                     >
-                        <title>{CATEGORY_LABELS[sl.category] || sl.category}: {formatCurrency(sl.total)} ({Math.round((sl.total / total) * 100)}%)</title>
-                    </path>
-                ))}
-                <text x="100" y="95" textAnchor="middle" className="fill-foreground text-lg font-bold" fontSize="18">{formatCurrency(total)}</text>
-                <text x="100" y="115" textAnchor="middle" className="fill-muted-foreground" fontSize="11">Total Spent</text>
-            </svg>
-            <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
-                {data.slice(0, 8).map(d => (
-                    <div key={d.category} className="flex items-center gap-2">
                         <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: CATEGORY_COLORS[d.category] || "#737373" }} />
                         <span className="text-muted-foreground truncate">{CATEGORY_LABELS[d.category] || d.category}</span>
                         <span className="font-medium ml-auto">{Math.round((d.total / total) * 100)}%</span>
@@ -216,6 +238,7 @@ export default function PersonalDashboard() {
     // ── Bucket cards config ──
     const buckets = [
         { href: "/personal/transactions", label: "Transactions", desc: "Log entries and view history", icon: <CreditCard className="w-6 h-6" />, color: "cyan" },
+        { href: "/personal/flow", label: "The Flow", desc: "Visualize where your money goes", icon: <Activity className="w-6 h-6" />, color: "blue" },
         { href: "/personal/planning", label: "Planning", desc: "Plan trips & big purchases", icon: <Target className="w-6 h-6" />, color: "amber" },
         { href: "/personal/budgets", label: "Budgeting", desc: "Set monthly spending limits", icon: <PieChartIcon className="w-6 h-6" />, color: "green" },
         { href: "/personal/chat", label: "Ask AI", desc: "Get financial advice & insights", icon: <MessageSquare className="w-6 h-6" />, color: "yellow" },
@@ -224,6 +247,7 @@ export default function PersonalDashboard() {
 
     const bucketColors: Record<string, { border: string; bg: string; text: string; iconBg: string }> = {
         cyan: { border: "hover:border-cyan-500/50", bg: "from-cyan-500/10 to-blue-500/5", text: "text-cyan-400", iconBg: "bg-cyan-500/20" },
+        blue: { border: "hover:border-blue-500/50", bg: "from-blue-500/10 to-indigo-500/5", text: "text-blue-400", iconBg: "bg-blue-500/20" },
         amber: { border: "hover:border-amber-500/50", bg: "from-amber-500/10 to-orange-500/5", text: "text-amber-400", iconBg: "bg-amber-500/20" },
         green: { border: "hover:border-green-500/50", bg: "from-green-500/10 to-emerald-500/5", text: "text-green-400", iconBg: "bg-green-500/20" },
         yellow: { border: "hover:border-yellow-500/50", bg: "from-yellow-500/10 to-orange-500/5", text: "text-yellow-400", iconBg: "bg-yellow-500/20" },
@@ -235,46 +259,46 @@ export default function PersonalDashboard() {
             {/* ───── GREETING ───── */}
             <section className="flex flex-col md:flex-row md:items-end justify-between gap-6">
                 <div>
-                    <h1 className="text-4xl font-bold bg-gradient-to-r from-foreground to-muted-foreground bg-clip-text text-transparent">
+                    <h1 className="text-2xl sm:text-4xl font-bold bg-gradient-to-r from-foreground to-muted-foreground bg-clip-text text-transparent">
                         {isLoading ? "Loading..." : greeting}
                     </h1>
-                    <p className="text-muted-foreground mt-2 text-lg">{netMessage}</p>
+                    <p className="text-muted-foreground mt-1.5 sm:mt-2 text-base sm:text-lg">{netMessage}</p>
                 </div>
             </section>
 
             {/* ───── 3 STAT CARDS ───── */}
             <section className="grid grid-cols-1 md:grid-cols-3 gap-5">
                 {/* Income */}
-                <div className="rounded-2xl border bg-card p-6 flex items-center gap-4 shadow-sm hover:shadow-md transition-shadow">
-                    <div className="w-14 h-14 rounded-2xl bg-emerald-500/15 flex items-center justify-center">
-                        <ArrowUpRight className="w-7 h-7 text-emerald-500" />
+                <div className="rounded-2xl border bg-card p-4 sm:p-6 flex items-center gap-3 sm:gap-4 shadow-sm hover:shadow-md transition-shadow">
+                    <div className="w-11 h-11 sm:w-14 sm:h-14 rounded-2xl bg-emerald-500/15 flex items-center justify-center flex-shrink-0">
+                        <ArrowUpRight className="w-5 h-5 sm:w-7 sm:h-7 text-emerald-500" />
                     </div>
                     <div>
-                        <p className="text-sm text-muted-foreground font-medium">Income</p>
-                        <p className="text-2xl font-bold text-emerald-500">{formatCurrency(income)}</p>
-                        <p className="text-xs text-muted-foreground mt-0.5">This month&apos;s total earnings</p>
+                        <p className="text-xs sm:text-sm text-muted-foreground font-medium">Income</p>
+                        <p className="text-xl sm:text-2xl font-bold text-emerald-500">{formatCurrency(income)}</p>
+                        <p className="text-xs text-muted-foreground mt-0.5 hidden sm:block">This month&apos;s total earnings</p>
                     </div>
                 </div>
                 {/* Expense */}
-                <div className="rounded-2xl border bg-card p-6 flex items-center gap-4 shadow-sm hover:shadow-md transition-shadow">
-                    <div className="w-14 h-14 rounded-2xl bg-rose-500/15 flex items-center justify-center">
-                        <ArrowDownRight className="w-7 h-7 text-rose-500" />
+                <div className="rounded-2xl border bg-card p-4 sm:p-6 flex items-center gap-3 sm:gap-4 shadow-sm hover:shadow-md transition-shadow">
+                    <div className="w-11 h-11 sm:w-14 sm:h-14 rounded-2xl bg-rose-500/15 flex items-center justify-center flex-shrink-0">
+                        <ArrowDownRight className="w-5 h-5 sm:w-7 sm:h-7 text-rose-500" />
                     </div>
                     <div>
-                        <p className="text-sm text-muted-foreground font-medium">Expenses</p>
-                        <p className="text-2xl font-bold text-rose-500">{formatCurrency(expense)}</p>
-                        <p className="text-xs text-muted-foreground mt-0.5">Total spent this month</p>
+                        <p className="text-xs sm:text-sm text-muted-foreground font-medium">Expenses</p>
+                        <p className="text-xl sm:text-2xl font-bold text-rose-500">{formatCurrency(expense)}</p>
+                        <p className="text-xs text-muted-foreground mt-0.5 hidden sm:block">Total spent this month</p>
                     </div>
                 </div>
                 {/* Remaining */}
-                <div className="rounded-2xl border bg-card p-6 flex items-center gap-4 shadow-sm hover:shadow-md transition-shadow">
-                    <div className={`w-14 h-14 rounded-2xl flex items-center justify-center ${remaining >= 0 ? "bg-blue-500/15" : "bg-orange-500/15"}`}>
-                        <Wallet className={`w-7 h-7 ${remaining >= 0 ? "text-blue-500" : "text-orange-500"}`} />
+                <div className="rounded-2xl border bg-card p-4 sm:p-6 flex items-center gap-3 sm:gap-4 shadow-sm hover:shadow-md transition-shadow">
+                    <div className={`w-11 h-11 sm:w-14 sm:h-14 rounded-2xl flex items-center justify-center flex-shrink-0 ${remaining >= 0 ? "bg-blue-500/15" : "bg-orange-500/15"}`}>
+                        <Wallet className={`w-5 h-5 sm:w-7 sm:h-7 ${remaining >= 0 ? "text-blue-500" : "text-orange-500"}`} />
                     </div>
                     <div>
-                        <p className="text-sm text-muted-foreground font-medium">Remaining</p>
-                        <p className={`text-2xl font-bold ${remaining >= 0 ? "text-blue-500" : "text-orange-500"}`}>{formatCurrency(remaining)}</p>
-                        <p className="text-xs text-muted-foreground mt-0.5">{remaining >= 0 ? "Available balance" : "Over budget"}</p>
+                        <p className="text-xs sm:text-sm text-muted-foreground font-medium">Remaining</p>
+                        <p className={`text-xl sm:text-2xl font-bold ${remaining >= 0 ? "text-blue-500" : "text-orange-500"}`}>{formatCurrency(remaining)}</p>
+                        <p className="text-xs text-muted-foreground mt-0.5 hidden sm:block">{remaining >= 0 ? "Available balance" : "Over budget"}</p>
                     </div>
                 </div>
             </section>
@@ -282,7 +306,7 @@ export default function PersonalDashboard() {
             {/* ───── CHARTS ROW ───── */}
             <section className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 {/* Pie Chart */}
-                <div className="rounded-2xl border bg-card p-6 shadow-sm">
+                <div className="rounded-2xl border bg-card p-4 sm:p-6 shadow-sm">
                     <h2 className="text-lg font-semibold mb-1">Where Your Money Goes</h2>
                     <p className="text-sm text-muted-foreground mb-5">This shows your expense breakdown by category. Hover over a slice to see the exact amount.</p>
                     {breakdownData?.breakdown && breakdownData.breakdown.length > 0 ? (
@@ -293,7 +317,7 @@ export default function PersonalDashboard() {
                 </div>
 
                 {/* Monthly Histogram */}
-                <div className="rounded-2xl border bg-card p-6 shadow-sm">
+                <div className="rounded-2xl border bg-card p-4 sm:p-6 shadow-sm">
                     <h2 className="text-lg font-semibold mb-1">Monthly Income vs. Expenses</h2>
                     <p className="text-sm text-muted-foreground mb-5">Compare your earning and spending patterns month-over-month. Taller green bars = more income.</p>
                     {trendsData?.trends && trendsData.trends.length > 0 ? (
@@ -305,7 +329,7 @@ export default function PersonalDashboard() {
             </section>
 
             {/* ───── WEEKLY INSIGHTS ───── */}
-            <section className="rounded-2xl border bg-card p-6 shadow-sm">
+            <section className="rounded-2xl border bg-card p-4 sm:p-6 shadow-sm">
                 <div className="flex items-center gap-3 mb-4">
                     <div className="w-10 h-10 rounded-xl bg-purple-500/15 flex items-center justify-center">
                         <Zap className="w-5 h-5 text-purple-500" />
@@ -363,9 +387,9 @@ export default function PersonalDashboard() {
             </section>
 
             {/* ───── ADVANCED ANALYTICS ───── */}
-            <section className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+            <section className="grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-6">
                 {/* Savings Rate */}
-                <div className="rounded-2xl border bg-card p-6 shadow-sm text-center">
+                <div className="rounded-2xl border bg-card p-4 sm:p-6 shadow-sm text-center">
                     <h3 className="text-sm font-semibold text-muted-foreground mb-3 flex items-center justify-center gap-2">
                         <Percent className="w-4 h-4" /> Savings Rate
                     </h3>
@@ -379,7 +403,7 @@ export default function PersonalDashboard() {
                     </p>
                 </div>
                 {/* Daily Burn Rate */}
-                <div className="rounded-2xl border bg-card p-6 shadow-sm text-center">
+                <div className="rounded-2xl border bg-card p-4 sm:p-6 shadow-sm text-center">
                     <h3 className="text-sm font-semibold text-muted-foreground mb-3 flex items-center justify-center gap-2">
                         <Flame className="w-4 h-4" /> Daily Burn Rate
                     </h3>
@@ -390,7 +414,7 @@ export default function PersonalDashboard() {
                     </p>
                 </div>
                 {/* Income vs Expense Trend */}
-                <div className="rounded-2xl border bg-card p-6 shadow-sm text-center">
+                <div className="rounded-2xl border bg-card p-4 sm:p-6 shadow-sm text-center">
                     <h3 className="text-sm font-semibold text-muted-foreground mb-3 flex items-center justify-center gap-2">
                         <Activity className="w-4 h-4" /> Monthly Trend
                     </h3>
@@ -431,7 +455,7 @@ export default function PersonalDashboard() {
                             <Link
                                 key={bucket.href}
                                 href={bucket.href}
-                                className={`group relative overflow-hidden rounded-2xl border bg-card ${c.border} transition-all p-6 flex flex-col justify-between min-h-[180px] shadow-sm hover:shadow-lg`}
+                                className={`group relative overflow-hidden rounded-2xl border bg-card ${c.border} transition-all p-5 sm:p-6 flex flex-col justify-between min-h-[160px] sm:min-h-[180px] shadow-sm hover:shadow-lg`}
                             >
                                 <div className={`absolute inset-0 bg-gradient-to-br ${c.bg} opacity-0 group-hover:opacity-100 transition-opacity`} />
                                 <div className="relative z-10">

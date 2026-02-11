@@ -666,6 +666,29 @@ class OpenAIClient:
 
     # ------------------- Q&A over a balance sheet -------------------
 
+    def chat(self, prompt: str) -> str:
+        """
+        Plain-text chat completion. Used by the personal finance chat endpoint.
+        Falls back to a polite offline message if no API key is configured.
+        """
+        if not self.client:
+            return (
+                "I'm currently running in offline mode and can't provide AI-powered responses. "
+                "Please ensure an OpenAI API key is configured to enable the chat feature."
+            )
+
+        messages = [
+            {"role": "user", "content": prompt},
+        ]
+        try:
+            comp = self.client.chat.completions.create(
+                model=self.model, messages=messages, timeout=30
+            )
+            return (comp.choices[0].message.content or "").strip()
+        except Exception as e:
+            log.error("chat failed: %s", e)
+            return "Sorry — I couldn't process your request right now. Please try again."
+
     def answer_question(self, balance_data: dict, question: str) -> str:
         """
         Freeform Q&A about computed balance data. Falls back to a simple template if no API.
@@ -686,4 +709,4 @@ class OpenAIClient:
             return (comp.choices[0].message.content or "").strip()
         except Exception as e:
             log.error("answer_question failed: %s", e)
-            return "Sorry—couldn’t run the assistant right now."
+            return "Sorry—couldn't run the assistant right now."

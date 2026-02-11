@@ -1,5 +1,5 @@
 "use client";
-import React, { useState } from 'react';
+import React, { useState, Suspense } from 'react';
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
@@ -30,7 +30,7 @@ const CATEGORY_LABELS: Record<string, string> = {
     gifts: "Gifts", other: "Other",
 };
 
-export default function TransactionsPage() {
+function TransactionsPageInner() {
     const queryClient = useQueryClient();
     const searchParams = useSearchParams();
     const categoryFilter = searchParams.get("category") || "";
@@ -295,5 +295,17 @@ export default function TransactionsPage() {
                 )}
             </div>
         </div >
+    );
+}
+
+export default function TransactionsPage() {
+    return (
+        <Suspense fallback={
+            <div className="flex items-center justify-center h-64">
+                <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-primary" />
+            </div>
+        }>
+            <TransactionsPageInner />
+        </Suspense>
     );
 }

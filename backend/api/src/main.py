@@ -42,6 +42,7 @@ from .routers import inventory as inventory_router
 from .routers import journal as journal_router
 from .routers import personal as personal_router
 from .routers import settings as settings_router
+from .routers import webhooks as webhooks_router
 from .security import AuthContext, require_plan
 from .httpx_compat import ensure_async_client_app_support
 from .storage import store_file
@@ -94,6 +95,7 @@ app.include_router(analytics_router.router)
 app.include_router(settings_router.router)
 app.include_router(journal_router.router)
 app.include_router(personal_router.router)
+app.include_router(webhooks_router.router)
 
 JWT_SECRET = settings.jwt_secret
 JWT_EXPIRE_MINUTES = settings.jwt_access_minutes

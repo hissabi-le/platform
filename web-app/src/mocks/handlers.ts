@@ -320,6 +320,19 @@ export const handlers = [
     journalStore[key] = updated;
     return ok(updated);
   }),
+
+  // WhatsApp integration
+  http.get("http://localhost:8000/personal/settings/whatsapp/status", () =>
+    ok({ linked: false, verified: false, phone: null })
+  ),
+
+  http.post("http://localhost:8000/personal/settings/whatsapp/link", async () =>
+    ok({ status: "otp_sent", message: "Verification code sent to your WhatsApp" })
+  ),
+
+  http.post("http://localhost:8000/personal/settings/whatsapp/unlink", () =>
+    ok({ ok: true })
+  ),
 ];
 
 function formatDate(value: Date): string {

@@ -24,6 +24,7 @@ if settings.redis_url:
 # Now import actors - they will register with our configured broker
 from .process_upload import process_upload  # noqa: E402
 from .recompute_analytics import recompute_analytics  # noqa: F401, E402
+from .whatsapp import process_whatsapp_message  # noqa: F401, E402
 
 
 _handler_lock = asyncio.Lock()

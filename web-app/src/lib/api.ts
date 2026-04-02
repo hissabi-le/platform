@@ -413,6 +413,19 @@ export const api = {
     },
     getMerchantProfile: (vendor: string) =>
       fetchJson<MerchantProfile>(API_ENDPOINTS.PERSONAL.MERCHANT(vendor)),
+
+    // WhatsApp Integration
+    whatsappLink: (phone_number: string) =>
+      fetchJson<{ status: string; message: string }>(API_ENDPOINTS.PERSONAL.WHATSAPP_LINK, {
+        method: "POST",
+        body: { phone_number },
+      }),
+    whatsappUnlink: () =>
+      fetchJson<{ ok: boolean }>(API_ENDPOINTS.PERSONAL.WHATSAPP_UNLINK, { method: "POST" }),
+    whatsappStatus: () =>
+      fetchJson<{ linked: boolean; verified: boolean; phone: string | null }>(
+        API_ENDPOINTS.PERSONAL.WHATSAPP_STATUS
+      ),
   },
 };
 

@@ -97,6 +97,12 @@ class Settings(BaseSettings):
     feature_inventory_enabled: bool = Field(default=False, alias="FEATURE_INVENTORY_ENABLED")
     feature_recipes_enabled: bool = Field(default=False, alias="FEATURE_RECIPES_ENABLED")
 
+    # WhatsApp / Twilio
+    twilio_account_sid: str | None = Field(default=None, alias="TWILIO_ACCOUNT_SID")
+    twilio_auth_token: str | None = Field(default=None, alias="TWILIO_AUTH_TOKEN")
+    twilio_whatsapp_number: str | None = Field(default=None, alias="TWILIO_WHATSAPP_NUMBER")
+    whatsapp_rate_limit_per_min: int = Field(default=10, alias="WHATSAPP_RATE_LIMIT_PER_MIN")
+
     @field_validator("sqlalchemy_echo", mode="before")
     @classmethod
     def _coerce_bool(cls, value: bool | str | int) -> bool:

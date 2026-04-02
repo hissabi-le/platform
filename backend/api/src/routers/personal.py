@@ -631,3 +631,101 @@ async def get_merchant_profile(
     if not profile:
         raise HTTPException(status_code=404, detail="No transactions found for this merchant")
     return profile
+
+
+# ==================== WhatsApp Integration ====================
+
+class WhatsAppLinkRequest(BaseModel):
+    """Request to link a WhatsApp number."""
+    phone_number: str = Field(..., min_length=10, max_length=20,
+                              description="Phone number in E.164 format (e.g. +1234567890)")
+
+
+@router.post("/settings/whatsapp/link")
+async def link_whatsapp(
+    payload: WhatsAppLinkRequest,
+    auth: AuthContext = Depends(require_plan("personal")),
+    session: AsyncSession = Depends(get_db),
+):
+    """
+    Link a WhatsApp number to the user's account.
+    Sends a 6-digit OTP via WhatsApp for verification.
+    """
+    import re
+    import secrets
+
+    # Normalize phone number to E.164
+    phone = payload.phone_number.strip()
+    if not phone.startswith("+"):
+        phone = "+" + phone
+    if not re.match(r"^\+[1-9]\d{6,14}$", phone):
+        raise HTTPException(status_code=400, detail="Invalid phone number format. Use E.164 (e.g. +1234567890)")
+
+    # Check if another user already has this number
+    from sqlalchemy import select
+    from ..models import User
+    existing = await session.scalar(
+        select(User).where(User.phone_number == phone, User.id != auth.user.id)
+    )
+    if existing:
+        raise HTTPException(status_code=409, detail="This phone number is already linked to another account")
+
+    # Generate 6-digit OTP
+    otp = "{:06d}".format(secrets.randbelow(1000000))
+
+    # Store OTP in Redis (10 minute TTL)
+    from ..config import settings
+    if settings.redis_url:
+        try:
+            import redis.asyncio as aioredis
+            r = aioredis.from_url(settings.redis_url, decode_responses=True)
+            await r.set(f"wa_otp:{auth.user.id}", otp, ex=600)
+            await r.aclose()
+        except Exception as e:
+            raise HTTPException(status_code=503, detail="Service temporarily unavailable")
+    else:
+        raise HTTPException(status_code=503, detail="Redis not configured")
+
+    # Update user's phone number (unverified)
+    auth.user.phone_number = phone
+    auth.user.whatsapp_verified = False
+    await session.commit()
+
+    # Send OTP via WhatsApp
+    from ..whatsapp_client import send_whatsapp_message
+    sent = await send_whatsapp_message(
+        phone,
+        f"🔐 Your Hissabi verification code is: *{otp}*\n\n"
+        f"Reply with this code to verify your WhatsApp number.\n"
+        f"This code expires in 10 minutes."
+    )
+
+    if not sent:
+        return {"status": "pending", "message": "Phone saved but OTP delivery failed. Check Twilio config."}
+
+    return {"status": "otp_sent", "message": "Verification code sent to your WhatsApp"}
+
+
+@router.post("/settings/whatsapp/unlink")
+async def unlink_whatsapp(
+    auth: AuthContext = Depends(require_plan("personal")),
+    session: AsyncSession = Depends(get_db),
+):
+    """Unlink WhatsApp from the user's account."""
+    auth.user.phone_number = None
+    auth.user.whatsapp_verified = False
+    auth.user.whatsapp_opt_in = False
+    await session.commit()
+    return {"ok": True}
+
+
+@router.get("/settings/whatsapp/status")
+async def whatsapp_status(
+    auth: AuthContext = Depends(require_plan("personal")),
+):
+    """Get WhatsApp linking status."""
+    return {
+        "linked": auth.user.phone_number is not None,
+        "verified": auth.user.whatsapp_verified,
+        "phone": auth.user.phone_number,
+    }

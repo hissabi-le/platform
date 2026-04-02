@@ -6,4 +6,5 @@ from . import inventory  # noqa: F401
 from . import journal  # noqa: F401
 from . import personal  # noqa: F401
 from . import settings  # noqa: F401
+from . import webhooks  # noqa: F401
 

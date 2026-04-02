@@ -45,6 +45,9 @@ export const API_ENDPOINTS = {
         CATEGORIES: "/personal/categories",
         MERCHANTS: "/personal/merchants",
         MERCHANT: (vendor: string) => `/personal/merchants/${encodeURIComponent(vendor)}`,
+        WHATSAPP_LINK: "/personal/settings/whatsapp/link",
+        WHATSAPP_UNLINK: "/personal/settings/whatsapp/unlink",
+        WHATSAPP_STATUS: "/personal/settings/whatsapp/status",
     },
 } as const;
 

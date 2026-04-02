@@ -57,7 +57,10 @@ class Organisation(Base):
 
 class User(Base):
     __tablename__ = "users"
-    __table_args__ = (UniqueConstraint("email", name="uq_users_email"),)
+    __table_args__ = (
+        UniqueConstraint("email", name="uq_users_email"),
+        UniqueConstraint("phone_number", name="uq_users_phone"),
+    )
 
     id:               Mapped[int]      = mapped_column(primary_key=True)
     org_id:           Mapped[int]      = mapped_column(
@@ -73,6 +76,10 @@ class User(Base):
                                               server_default=func.now(),
                                               nullable=False,
                                           )
+    # WhatsApp integration
+    phone_number:      Mapped[Optional[str]]  = mapped_column(String(20), nullable=True)
+    whatsapp_verified: Mapped[bool]           = mapped_column(Boolean, nullable=False, default=False)
+    whatsapp_opt_in:   Mapped[bool]           = mapped_column(Boolean, nullable=False, default=False)
 
     organisation:     Mapped["Organisation"] = relationship("Organisation", back_populates="users")
     journal_days:     Mapped[List["JournalDay"]] = relationship("JournalDay", back_populates="user")

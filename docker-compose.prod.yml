@@ -23,6 +23,9 @@ services:
       - SENTRY_DSN=${SENTRY_DSN:-}
       - ENVIRONMENT=production
       - FEATURE_INVENTORY_ENABLED=false
+      - TWILIO_ACCOUNT_SID=${TWILIO_ACCOUNT_SID:-}
+      - TWILIO_AUTH_TOKEN=${TWILIO_AUTH_TOKEN:-}
+      - TWILIO_WHATSAPP_NUMBER=${TWILIO_WHATSAPP_NUMBER:-}
     volumes:
       - uploads:/app/data/uploads
     restart: always
@@ -32,7 +35,7 @@ services:
     build:
       context: ./backend/api
       dockerfile: Dockerfile
-    command: dramatiq src.tasks.process_upload src.tasks.recompute_analytics --processes 1 --threads 2
+    command: dramatiq src.tasks.process_upload src.tasks.recompute_analytics src.tasks.whatsapp --processes 1 --threads 2
     depends_on:
       - db
       - redis
@@ -45,6 +48,9 @@ services:
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - SENTRY_DSN=${SENTRY_DSN:-}
       - ENVIRONMENT=production
+      - TWILIO_ACCOUNT_SID=${TWILIO_ACCOUNT_SID:-}
+      - TWILIO_AUTH_TOKEN=${TWILIO_AUTH_TOKEN:-}
+      - TWILIO_WHATSAPP_NUMBER=${TWILIO_WHATSAPP_NUMBER:-}
     volumes:
       - uploads:/app/data/uploads
     restart: always

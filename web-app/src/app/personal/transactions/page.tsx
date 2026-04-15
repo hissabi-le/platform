@@ -38,7 +38,7 @@ function TransactionsPageInner() {
     const [isAdding, setIsAdding] = useState(false);
     const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null);
     const [formData, setFormData] = useState({
-        entry_date: new Date().toISOString().split("T")[0],
+        entry_date: new Date().toISOString().split("T")[0] as string,
         entry_type: "expense" as "income" | "expense",
         category: "",
         amount: "",
@@ -55,7 +55,7 @@ function TransactionsPageInner() {
             const amt = parseFloat(formData.amount);
             if (isNaN(amt) || amt <= 0) throw new Error("Amount is required");
             return api.personal.createEntry({
-                entry_date: formData.entry_date || new Date().toISOString().split("T")[0]!,
+                entry_date: formData.entry_date || (new Date().toISOString().split("T")[0] as string),
                 entry_type: formData.entry_type,
                 category: formData.category || "other",
                 amount: amt,

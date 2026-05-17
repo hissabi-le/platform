@@ -18,6 +18,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .cache.subscription_cache import subscription_cache
+from .cache.token_revocation_cache import token_revocation_cache
 from .config import settings
 from .database import get_db
 from .models import Subscription, User
@@ -161,7 +162,7 @@ def create_refresh_token(user: User) -> str:
     return _create_token(user, TokenType.REFRESH, timedelta(days=settings.jwt_refresh_days))
 
 
-def decode_token(token: str, expected_type: TokenType) -> TokenPayload:
+async def decode_token(token: str, expected_type: TokenType) -> TokenPayload:
     try:
         payload = _jwt_decode(token, settings.jwt_secret)
     except JWTError as exc:
@@ -176,7 +177,18 @@ def decode_token(token: str, expected_type: TokenType) -> TokenPayload:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token type")
     if data.iss and data.iss != settings.jwt_issuer:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid issuer")
+    if data.jti and await token_revocation_cache.is_revoked(data.jti):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token revoked")
     return data
+
+
+async def revoke_token(payload: TokenPayload) -> None:
+    """Add a token's ``jti`` to the revocation cache for the remainder of its TTL."""
+    if not payload.jti:
+        return
+    now = int(datetime.now(timezone.utc).timestamp())
+    ttl = max(0, int(payload.exp) - now)
+    await token_revocation_cache.revoke(payload.jti, ttl_seconds=ttl)
 
 
 async def _extract_credentials(
@@ -185,7 +197,7 @@ async def _extract_credentials(
 ) -> TokenPayload:
     if creds is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing auth token")
-    payload = decode_token(creds.credentials, expected_type=TokenType.ACCESS)
+    payload = await decode_token(creds.credentials, expected_type=TokenType.ACCESS)
     request.state.auth_payload = payload
     return payload
 
@@ -239,8 +251,8 @@ async def current_user_with_active_subscription(
     return auth
 
 
-def decode_refresh_token(token: str) -> TokenPayload:
-    return decode_token(token, expected_type=TokenType.REFRESH)
+async def decode_refresh_token(token: str) -> TokenPayload:
+    return await decode_token(token, expected_type=TokenType.REFRESH)
 
 
 def require_plan(feature: str):

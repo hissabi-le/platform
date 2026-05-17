@@ -6,7 +6,7 @@ import logging
 import os
 import re
 import tempfile
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any, Mapping, Optional
 
@@ -216,7 +216,11 @@ DOCUMENT_TYPE=mixed
 
 
 
-@dramatiq.actor(max_retries=0)
+@dramatiq.actor(
+    max_retries=3,
+    min_backoff=5_000,     # 5 seconds
+    max_backoff=300_000,   # 5 minutes
+)
 def process_upload(upload_id: int, org_id: int, storage_path: str) -> None:
     asyncio.run(_process_upload(upload_id, org_id, storage_path))
 
@@ -267,8 +271,17 @@ async def _process_upload(upload_id: int, org_id: int, storage_path: str) -> Non
             logger.exception("Failed to parse upload %s", upload_id)
             return
 
-        # Step 2: Try AI-first ingestion
-        ai_transactions = await _ai_ingest_document(raw_df)
+        # Step 2: Try AI-first ingestion (skip if org has burned through cap)
+        from ..cache.spend_cap_cache import spend_cap_cache
+
+        if spend_cap_cache.is_over_cap_sync(org_id):
+            logger.warning(
+                "Skipping AI ingestion for upload %s; org %s over daily token cap",
+                upload_id, org_id,
+            )
+            ai_transactions = None
+        else:
+            ai_transactions = await _ai_ingest_document(raw_df, org_id=org_id)
         
         txn_count = 0
         movement_count = 0
@@ -349,6 +362,7 @@ async def _mark_upload_error(session, upload: Upload, message: str) -> None:
 
 async def _ai_ingest_document(
     df: pd.DataFrame,
+    org_id: Optional[int] = None,
 ) -> Optional[list[dict[str, Any]]]:
     """
     Use OpenAI to understand and extract transactions from a raw spreadsheet.
@@ -397,11 +411,17 @@ Please thoroughly analyze this document:
 4. Detect payment status - DO NOT assume paid unless evidence
 5. Identify any AR (receivables) or AP (payables) entries
 
-Today's date: {datetime.utcnow().strftime('%Y-%m-%d')}
+Today's date: {datetime.now(timezone.utc).strftime('%Y-%m-%d')}
 
 CRITICAL INSTRUCTION: You MUST start your response with "ANALYSIS:", then "---METADATA---", then "---TRANSACTIONS---". Do not wrap the output in markdown code blocks.
 """
     
+    from ..cache.spend_cap_cache import spend_cap_cache
+
+    def _bill(tokens: Optional[int]) -> None:
+        if org_id is not None and tokens:
+            spend_cap_cache.record_usage_sync(org_id, tokens)
+
     # Try o3-mini first (Reasoning model)
     try:
         logger.info("Attempting AI ingestion with o3-mini...")
@@ -413,6 +433,7 @@ CRITICAL INSTRUCTION: You MUST start your response with "ANALYSIS:", then "---ME
             ],
             max_completion_tokens=10000,
         )
+        _bill(getattr(getattr(response, "usage", None), "total_tokens", None))
         content = response.choices[0].message.content or ""
         result = _parse_ai_response(content)
         if result:
@@ -435,6 +456,7 @@ CRITICAL INSTRUCTION: You MUST start your response with "ANALYSIS:", then "---ME
             temperature=0.1,
             max_tokens=4000,
         )
+        _bill(getattr(getattr(response, "usage", None), "total_tokens", None))
         content = response.choices[0].message.content or ""
         result = _parse_ai_response(content)
         if result:
@@ -493,7 +515,7 @@ def _parse_ai_response(content: str) -> Optional[list[dict[str, Any]]]:
         return []
     
     transactions = []
-    today = datetime.utcnow().strftime("%Y-%m-%d")
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     default_currency = metadata.get("detected_currency", "LBP")
     
     for line in transactions_text.strip().split("\n"):
@@ -536,12 +558,12 @@ def _parse_ai_response(content: str) -> Optional[list[dict[str, Any]]]:
             
             # Parse date - handle AMBIGUOUS marker
             if date_str.upper() == "AMBIGUOUS":
-                txn_date = datetime.utcnow()
+                txn_date = datetime.now(timezone.utc)
             else:
                 try:
                     txn_date = datetime.strptime(date_str, "%Y-%m-%d")
                 except ValueError:
-                    txn_date = datetime.utcnow()
+                    txn_date = datetime.now(timezone.utc)
             
             # Determine if expense (make amount negative for expenses)
             is_expense = any(cat in category for cat in [
@@ -663,7 +685,7 @@ async def _persist_ai_inventory(
         total_cost=abs(txn_data.get("amount", 0)),
         ref_type="upload",
         ref_document_id=document_id,
-        movement_date=txn_data.get("date", datetime.utcnow()),
+        movement_date=txn_data.get("date", datetime.now(timezone.utc)),
         notes=txn_data.get("description"),
     )
     session.add(movement)
@@ -790,13 +812,13 @@ async def _persist_transaction_row(
 
 def _parse_date(value: Any) -> datetime:
     if value is None:
-        return datetime.utcnow()
+        return datetime.now(timezone.utc)
     try:
         ts = pd.to_datetime(value, errors="coerce")
         if pd.isna(ts):
-            return datetime.utcnow()
+            return datetime.now(timezone.utc)
         if isinstance(ts, pd.Timestamp):
             return ts.to_pydatetime()
         return datetime.fromisoformat(str(ts))
     except Exception:
-        return datetime.utcnow()
+        return datetime.now(timezone.utc)

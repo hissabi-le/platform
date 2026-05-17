@@ -1,9 +1,11 @@
+import os
+
 import pytest
 import pytest_asyncio
 import json
 import asyncio
 from unittest.mock import MagicMock, patch
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from passlib.context import CryptContext
 from sqlalchemy import select, delete
 
@@ -11,6 +13,13 @@ from src.main import app
 from src.security import create_access_token, decode_token, TokenType
 from src.models import User, Subscription, Organisation, JournalEntry, Transaction, Upload, Document
 from src.tasks.process_upload import _process_upload
+
+# Integration tests require Redis (for Dramatiq enqueue). Skip in environments
+# where it isn't configured so contributors can still run unit tests locally.
+pytestmark = pytest.mark.skipif(
+    not os.getenv("REDIS_URL"),
+    reason="Integration tests require REDIS_URL to be set",
+)
 
 # -----------------------------------------------------------------------------
 # FIXTURES
@@ -207,14 +216,14 @@ async def test_analytics_aggregation(client, auth_headers, async_db_session, tes
         entry_type="revenue",
         total=1000.0,
         payment_status="paid",
-        created_at=datetime.utcnow()
+        created_at=datetime.now(timezone.utc)
     )
     # We need a parent JournalDay
     from src.models import JournalDay
     day = JournalDay(
         org_id=test_user.org_id,
         user_id=test_user.id,
-        journal_date=datetime.utcnow().date(),
+        journal_date=datetime.now(timezone.utc).date(),
         raw_text="Manual seed",
         hash_key="seed_123",
         parse_status="parsed"
@@ -231,7 +240,7 @@ async def test_analytics_aggregation(client, auth_headers, async_db_session, tes
         entry_type="cost",
         total=200.0,
         payment_status="paid",
-        created_at=datetime.utcnow()
+        created_at=datetime.now(timezone.utc)
     )
     async_db_session.add(exp)
     await async_db_session.commit()

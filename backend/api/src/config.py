@@ -39,6 +39,12 @@ class Settings(BaseSettings):
 
     stripe_secret_key: str | None = Field(default=None, alias="STRIPE_SECRET_KEY")
     stripe_webhook_secret: str | None = Field(default=None, alias="STRIPE_WEBHOOK_SECRET")
+    stripe_price_id_starter: str | None = Field(default=None, alias="STRIPE_PRICE_ID_STARTER")
+    stripe_price_id_pro: str | None = Field(default=None, alias="STRIPE_PRICE_ID_PRO")
+
+    frontend_url: str = Field(default="http://localhost:3000", alias="FRONTEND_URL")
+
+    sentry_dsn: str = Field(default="", alias="SENTRY_DSN")
 
     storage_backend: Literal["local", "s3"] = Field(default="local", alias="STORAGE_BACKEND")
     storage_local_root: str = Field(default="./data/uploads", alias="STORAGE_LOCAL_ROOT")
@@ -58,21 +64,39 @@ class Settings(BaseSettings):
     # Store as string to avoid pydantic-settings JSON parsing issues
     cors_origins_str: str = Field(default="http://localhost:3000", alias="CORS_ORIGINS")
 
+    @staticmethod
+    def _parse_list(value: str) -> List[str]:
+        """Parse a comma-separated or JSON-list string into a list of strings.
+
+        Accepts both formats so existing `.env` files using
+        `CORS_ORIGINS=["https://a","https://b"]` continue to work alongside
+        the documented `CORS_ORIGINS=https://a,https://b` form.
+        """
+        value = (value or "").strip()
+        if not value:
+            return []
+        if value.startswith("[") and value.endswith("]"):
+            import json as _json
+
+            try:
+                parsed = _json.loads(value)
+                if isinstance(parsed, list):
+                    return [str(item).strip() for item in parsed if str(item).strip()]
+            except Exception:
+                pass
+        return [part.strip() for part in value.split(",") if part.strip()]
+
     @property
     def cors_origins(self) -> List[str]:
-        """Parse CORS_ORIGINS from comma-separated string."""
-        if not self.cors_origins_str:
-            return ["http://localhost:3000"]
-        return [part.strip() for part in self.cors_origins_str.split(",") if part.strip()]
+        parsed = self._parse_list(self.cors_origins_str)
+        return parsed or ["http://localhost:3000"]
 
     @property
     def allowed_mime_types(self) -> List[str]:
-        """Parse ALLOWED_MIME_TYPES from comma-separated string."""
-        if not self.allowed_mime_types_str:
-            return ["application/pdf", "text/csv"]
-        return [part.strip() for part in self.allowed_mime_types_str.split(",") if part.strip()]
+        parsed = self._parse_list(self.allowed_mime_types_str)
+        return parsed or ["application/pdf", "text/csv"]
 
-    jwt_secret: str = Field(default="change-me", alias="JWT_SECRET")
+    jwt_secret: str = Field(default="", alias="JWT_SECRET")
     jwt_issuer: str = Field(default="hissabi", alias="JWT_ISSUER")
     jwt_access_minutes: int = Field(default=15, alias="JWT_ACCESS_MINUTES")
     jwt_refresh_days: int = Field(default=7, alias="JWT_REFRESH_DAYS")
@@ -114,6 +138,29 @@ class Settings(BaseSettings):
         if lowered in {"1", "true", "yes", "on"}:
             return True
         return False
+
+    @field_validator("jwt_secret")
+    @classmethod
+    def _validate_jwt_secret_in_production(cls, value: str, info) -> str:
+        env = info.data.get("environment", "development")
+        if env == "production" and value.strip() in {"", "change-me"}:
+            raise ValueError(
+                "JWT_SECRET must be set to a strong random value in production. "
+                "Generate one with: python -c 'import secrets; print(secrets.token_urlsafe(64))'"
+            )
+        return value
+
+    @field_validator("stripe_webhook_secret")
+    @classmethod
+    def _validate_stripe_webhook_secret(cls, value: str | None, info) -> str | None:
+        env = info.data.get("environment", "development")
+        stripe_key = info.data.get("stripe_secret_key")
+        if env == "production" and stripe_key and not (value or "").strip():
+            raise ValueError(
+                "STRIPE_WEBHOOK_SECRET must be set in production when STRIPE_SECRET_KEY "
+                "is configured. Get it from https://dashboard.stripe.com/webhooks"
+            )
+        return value
 
 
 @lru_cache()

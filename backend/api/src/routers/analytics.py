@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Literal
 
 from fastapi import APIRouter, Depends
@@ -28,7 +28,7 @@ async def analytics_pnl(
     auth: AuthContext = Depends(require_plan("analytics_basic")),
     session: AsyncSession = Depends(get_db),
 ):
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     window = _RANGES[range]
     start = now - window
 
@@ -434,7 +434,7 @@ async def toggle_transaction_payment_status(
         raise HTTPException(status_code=404, detail="Transaction not found")
     
     # Update payment status
-    payment_date = datetime.utcnow() if status == "paid" else None
+    payment_date = datetime.now(timezone.utc) if status == "paid" else None
     txn.payment_status = status
     txn.payment_date = payment_date
     
@@ -475,7 +475,7 @@ async def generate_financial_document(
         raise HTTPException(status_code=500, detail="openpyxl not installed")
     
     # Calculate date range
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     if range == "all":
         start = datetime(2000, 1, 1)
     else:

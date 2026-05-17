@@ -21,6 +21,28 @@ export default function BillingSettingsPage() {
     onError: () => toast.error("Unable to update settings."),
   });
 
+  const upgradeMutation = useMutation({
+    mutationFn: () => api.billing.createCheckoutSession("pro"),
+    onSuccess: ({ url }) => {
+      window.location.href = url;
+    },
+    onError: (error) => {
+      const message = error instanceof Error ? error.message : "Unable to start checkout";
+      toast.error(message);
+    },
+  });
+
+  const manageMutation = useMutation({
+    mutationFn: () => api.billing.createPortalSession(),
+    onSuccess: ({ url }) => {
+      window.location.href = url;
+    },
+    onError: (error) => {
+      const message = error instanceof Error ? error.message : "Unable to open billing portal";
+      toast.error(message);
+    },
+  });
+
   return (
     <div className="space-y-5">
       <header className="space-y-1">
@@ -34,7 +56,25 @@ export default function BillingSettingsPage() {
           <div className="space-y-3 text-sm text-gray-600">
             <div>
               <span className="font-medium text-slate-700">Current plan</span>
-              <p className="text-xs text-gray-500">Starter – upgrade coming soon.</p>
+              <p className="text-xs text-gray-500">Starter plan.</p>
+              <div className="mt-2 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => upgradeMutation.mutate()}
+                  disabled={upgradeMutation.isPending}
+                  className="rounded bg-slate-900 px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50"
+                >
+                  {upgradeMutation.isPending ? "Redirecting…" : "Upgrade to Pro"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => manageMutation.mutate()}
+                  disabled={manageMutation.isPending}
+                  className="rounded border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 disabled:opacity-50"
+                >
+                  {manageMutation.isPending ? "Opening…" : "Manage subscription"}
+                </button>
+              </div>
             </div>
             <div>
               <span className="font-medium text-slate-700">Default currency</span>

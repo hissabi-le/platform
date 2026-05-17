@@ -56,6 +56,28 @@ export default function BillingSettingsPage() {
     },
   });
 
+  const upgradeMutation = useMutation({
+    mutationFn: () => api.billing.createCheckoutSession("pro"),
+    onSuccess: ({ url }) => {
+      window.location.href = url;
+    },
+    onError: (error) => {
+      const message = error instanceof Error ? error.message : "Unable to start checkout";
+      toast.error(message);
+    },
+  });
+
+  const manageMutation = useMutation({
+    mutationFn: () => api.billing.createPortalSession(),
+    onSuccess: ({ url }) => {
+      window.location.href = url;
+    },
+    onError: (error) => {
+      const message = error instanceof Error ? error.message : "Unable to open billing portal";
+      toast.error(message);
+    },
+  });
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     updateMutation.mutate({
@@ -117,9 +139,25 @@ export default function BillingSettingsPage() {
                   Inventory tracking
                 </p>
               </div>
-              <Button variant="outline" className="w-full" disabled>
-                Upgrade coming soon
-              </Button>
+              <div className="space-y-2">
+                <Button
+                  type="button"
+                  className="w-full"
+                  onClick={() => upgradeMutation.mutate()}
+                  disabled={upgradeMutation.isPending}
+                >
+                  {upgradeMutation.isPending ? "Redirecting…" : "Upgrade to Pro"}
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full"
+                  onClick={() => manageMutation.mutate()}
+                  disabled={manageMutation.isPending}
+                >
+                  {manageMutation.isPending ? "Opening…" : "Manage subscription"}
+                </Button>
+              </div>
             </div>
           </div>
 

@@ -6,7 +6,7 @@ precise monetary calculations, avoiding float precision errors.
 """
 import pytest
 from decimal import Decimal
-from datetime import datetime
+from datetime import datetime, timezone
 
 from src.models import Organisation, User, Upload, Transaction
 from src.security import hash_password
@@ -43,7 +43,7 @@ async def test_transaction_amount_decimal_precision(async_db_session):
     transaction = Transaction(
         org_id=org.id,
         upload_id=upload.id,
-        txn_date=datetime.utcnow(),
+        txn_date=datetime.now(timezone.utc),
         account_code="4000",
         category="Revenue",
         amount=Decimal("1234.5678"),  # Precise to 4 decimal places
@@ -84,7 +84,7 @@ async def test_transaction_negative_amounts(async_db_session):
     transaction = Transaction(
         org_id=org.id,
         upload_id=upload.id,
-        txn_date=datetime.utcnow(),
+        txn_date=datetime.now(timezone.utc),
         account_code="5000",
         category="Expense",
         amount=Decimal("-500.25"),
@@ -129,7 +129,7 @@ async def test_transaction_arithmetic_accuracy(async_db_session):
         txn = Transaction(
             org_id=org.id,
             upload_id=upload.id,
-            txn_date=datetime.utcnow(),
+            txn_date=datetime.now(timezone.utc),
             account_code=f"400{i}",
             category="Test",
             amount=amt,
@@ -171,7 +171,7 @@ async def test_transaction_zero_amount(async_db_session):
     transaction = Transaction(
         org_id=org.id,
         upload_id=upload.id,
-        txn_date=datetime.utcnow(),
+        txn_date=datetime.now(timezone.utc),
         account_code="4000",
         category="Test",
         amount=Decimal("0.0000"),

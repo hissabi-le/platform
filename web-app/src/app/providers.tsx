@@ -91,8 +91,10 @@ export function Providers({ children }: { children: React.ReactNode }) {
   const [qc] = useState(() => createQueryClient());
 
   useEffect(() => {
-    // Only enable MSW when explicitly opted in (development/testing)
-    if (process.env.NEXT_PUBLIC_USE_MSW === "1") {
+    if (
+      process.env.NODE_ENV !== "production" &&
+      process.env.NEXT_PUBLIC_USE_MSW === "1"
+    ) {
       import("@/mocks/browser").then(({ worker }) =>
         worker.start({ onUnhandledRequest: "bypass" })
       );

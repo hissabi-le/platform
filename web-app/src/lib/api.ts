@@ -1,12 +1,22 @@
 // src/lib/api.ts
 import { AUTH_TOKEN_KEY, API_ENDPOINTS, EVENTS } from "./constants";
 
-// Production API URL - use localhost only for local development
-export const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_BASE_URL ||
-  (process.env.NODE_ENV === 'development'
-    ? 'http://localhost:8000'
-    : 'https://splendid-light-production.up.railway.app');
+function resolveApiBaseUrl(): string {
+  const explicit = process.env.NEXT_PUBLIC_API_BASE_URL;
+  if (explicit && explicit.length > 0) return explicit;
+  if (
+    process.env.NODE_ENV === "development" ||
+    process.env.NODE_ENV === "test"
+  ) {
+    return "http://localhost:8000";
+  }
+  throw new Error(
+    "NEXT_PUBLIC_API_BASE_URL is not set. " +
+      "Configure it in the environment before building for production."
+  );
+}
+
+export const API_BASE_URL = resolveApiBaseUrl();
 
 
 export type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
@@ -282,6 +292,18 @@ export const api = {
     getOrg: () => fetchJson<OrganisationSettings>(API_ENDPOINTS.SETTINGS.ORG),
     updateOrg: (payload: Partial<OrganisationSettings>) =>
       fetchJson<OrganisationSettings>(API_ENDPOINTS.SETTINGS.ORG, { method: "PUT", body: payload }),
+  },
+
+  billing: {
+    createCheckoutSession: (plan: "starter" | "pro" = "pro") =>
+      fetchJson<{ url: string }>(
+        `${API_ENDPOINTS.BILLING.CHECKOUT_SESSION}?plan=${plan}`,
+        { method: "POST" }
+      ),
+    createPortalSession: () =>
+      fetchJson<{ url: string }>(API_ENDPOINTS.BILLING.PORTAL_SESSION, {
+        method: "POST",
+      }),
   },
 
   journal: {

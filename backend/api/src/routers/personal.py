@@ -2,6 +2,7 @@
 """API endpoints for Hisabi Personal - personal expense/income tracking."""
 from __future__ import annotations
 
+import asyncio
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import List, Optional, Any
@@ -10,11 +11,30 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..cache.spend_cap_cache import spend_cap_cache
 from ..database import get_db
 from ..models import PersonalCategory, PersonalEntryType
-from ..repositories.personal import PersonalRepo
+from ..repositories.personal import PersonalRepo, assert_user_in_org
 from ..security import AuthContext, require_plan
 from ..assistant import OpenAIClient
+
+
+async def personal_auth(
+    auth: AuthContext = Depends(require_plan("personal")),
+    session: AsyncSession = Depends(get_db),
+) -> AuthContext:
+    """Auth + tenant-isolation tripwire for personal routes.
+
+    ``security.current_user`` already verifies that the JWT's ``org`` claim
+    matches the User row's current ``org_id``. This dependency re-runs that
+    check explicitly on every personal request — defense-in-depth against
+    a stale cache or a User row that has been re-orged since the token was
+    issued. Personal repository methods stay keyed by ``user_id`` only,
+    because the data model is per-user; org-level tenancy is enforced at
+    this boundary instead of in every query.
+    """
+    await assert_user_in_org(session, auth.user.id, auth.user.org_id)
+    return auth
 
 router = APIRouter(prefix="/personal", tags=["personal"])
 personal_repo = PersonalRepo()
@@ -139,7 +159,7 @@ class PersonalAccountResponse(BaseModel):
 @router.post("/entries", response_model=PersonalEntryResponse)
 async def create_entry(
     payload: PersonalEntryCreate,
-    auth: AuthContext = Depends(require_plan("personal")),
+    auth: AuthContext = Depends(personal_auth),
     session: AsyncSession = Depends(get_db),
 ):
     """Create a new personal finance entry."""
@@ -167,7 +187,7 @@ async def list_entries(
     entry_type: Optional[str] = None,
     limit: int = 100,
     offset: int = 0,
-    auth: AuthContext = Depends(require_plan("personal")),
+    auth: AuthContext = Depends(personal_auth),
     session: AsyncSession = Depends(get_db),
 ):
     """List personal entries with filters."""
@@ -187,7 +207,7 @@ async def list_entries(
 @router.get("/entries/{entry_id}", response_model=PersonalEntryResponse)
 async def get_entry(
     entry_id: int,
-    auth: AuthContext = Depends(require_plan("personal")),
+    auth: AuthContext = Depends(personal_auth),
     session: AsyncSession = Depends(get_db),
 ):
     """Get a single entry by ID."""
@@ -201,7 +221,7 @@ async def get_entry(
 async def update_entry(
     entry_id: int,
     payload: PersonalEntryUpdate,
-    auth: AuthContext = Depends(require_plan("personal")),
+    auth: AuthContext = Depends(personal_auth),
     session: AsyncSession = Depends(get_db),
 ):
     """Update a personal entry."""
@@ -218,7 +238,7 @@ async def update_entry(
 @router.delete("/entries/{entry_id}")
 async def delete_entry(
     entry_id: int,
-    auth: AuthContext = Depends(require_plan("personal")),
+    auth: AuthContext = Depends(personal_auth),
     session: AsyncSession = Depends(get_db),
 ):
     """Delete a personal entry."""
@@ -270,22 +290,31 @@ Parse the following text:
 @router.post("/parse", response_model=List[ParsedEntry])
 async def parse_text(
     payload: ParseTextRequest,
-    auth: AuthContext = Depends(require_plan("personal")),
+    auth: AuthContext = Depends(personal_auth),
 ):
     """Parse free-text input using AI and extract entries."""
+    await spend_cap_cache.check_or_raise(auth.user.org_id)
     try:
         prompt = PERSONAL_PARSE_PROMPT + payload.text
-        response = openai_client.chat_json(prompt)
+        response = await asyncio.to_thread(openai_client.chat_json, prompt)
+        if openai_client.last_total_tokens:
+            await spend_cap_cache.record_usage(
+                auth.user.org_id, openai_client.last_total_tokens
+            )
 
         if not response:
             return []
 
         entries = []
         for item in response:
+            try:
+                amount = float(item.get("amount", 0))
+            except (TypeError, ValueError):
+                continue
             entry = ParsedEntry(
                 entry_type=item.get("entry_type", "expense"),
                 category=item.get("category", "other"),
-                amount=float(item.get("amount", 0)),
+                amount=amount,
                 description=item.get("description", ""),
                 vendor=item.get("vendor"),
                 entry_date=payload.default_date,
@@ -293,14 +322,17 @@ async def parse_text(
             entries.append(entry)
 
         return entries
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to parse text: {str(e)}")
+    except HTTPException:
+        raise
+    except Exception:
+        # Don't leak internal error detail to clients (P0-6).
+        raise HTTPException(status_code=500, detail="Failed to parse text")
 
 
 @router.post("/parse/save", response_model=List[PersonalEntryResponse])
 async def parse_and_save(
     payload: ParseTextRequest,
-    auth: AuthContext = Depends(require_plan("personal")),
+    auth: AuthContext = Depends(personal_auth),
     session: AsyncSession = Depends(get_db),
 ):
     """Parse text and directly save entries."""
@@ -331,7 +363,7 @@ async def parse_and_save(
 async def get_summary(
     start_date: Optional[date] = None,
     end_date: Optional[date] = None,
-    auth: AuthContext = Depends(require_plan("personal")),
+    auth: AuthContext = Depends(personal_auth),
     session: AsyncSession = Depends(get_db),
 ):
     """Get spending summary for date range."""
@@ -357,7 +389,7 @@ async def get_category_breakdown(
     start_date: Optional[date] = None,
     end_date: Optional[date] = None,
     entry_type: str = "expense",
-    auth: AuthContext = Depends(require_plan("personal")),
+    auth: AuthContext = Depends(personal_auth),
     session: AsyncSession = Depends(get_db),
 ):
     """Get spending breakdown by category (pie chart data)."""
@@ -375,7 +407,7 @@ async def get_category_breakdown(
 @router.get("/analytics/trends")
 async def get_trends(
     months: int = 12,
-    auth: AuthContext = Depends(require_plan("personal")),
+    auth: AuthContext = Depends(personal_auth),
     session: AsyncSession = Depends(get_db),
 ):
     """Get monthly income/expense trends (bar chart data)."""
@@ -388,7 +420,7 @@ async def get_top_spending(
     days: int = 30,
     category: Optional[str] = None,
     limit: int = 5,
-    auth: AuthContext = Depends(require_plan("personal")),
+    auth: AuthContext = Depends(personal_auth),
     session: AsyncSession = Depends(get_db),
 ):
     """Get top spending items with time/category filter."""
@@ -400,7 +432,7 @@ async def get_top_spending(
 
 @router.get("/insights")
 async def get_insights(
-    auth: AuthContext = Depends(require_plan("personal")),
+    auth: AuthContext = Depends(personal_auth),
     session: AsyncSession = Depends(get_db),
 ):
     """Get personalized insights for greeting message."""
@@ -412,7 +444,7 @@ async def get_insights(
 
 @router.get("/accounts", response_model=List[PersonalAccountResponse])
 async def list_accounts(
-    auth: AuthContext = Depends(require_plan("personal")),
+    auth: AuthContext = Depends(personal_auth),
     session: AsyncSession = Depends(get_db),
 ):
     """List all personal accounts."""
@@ -422,7 +454,7 @@ async def list_accounts(
 @router.post("/accounts", response_model=PersonalAccountResponse)
 async def create_account(
     payload: PersonalAccountCreate,
-    auth: AuthContext = Depends(require_plan("personal")),
+    auth: AuthContext = Depends(personal_auth),
     session: AsyncSession = Depends(get_db),
 ):
     """Create a new personal account."""
@@ -436,7 +468,7 @@ async def create_account(
 @router.delete("/accounts/{account_id}")
 async def delete_account(
     account_id: int,
-    auth: AuthContext = Depends(require_plan("personal")),
+    auth: AuthContext = Depends(personal_auth),
     session: AsyncSession = Depends(get_db),
 ):
     """Delete a personal account."""
@@ -452,7 +484,7 @@ async def delete_account(
 
 @router.get("/budgets", response_model=List[BudgetResponse])
 async def list_budgets(
-    auth: AuthContext = Depends(require_plan("personal")),
+    auth: AuthContext = Depends(personal_auth),
     session: AsyncSession = Depends(get_db),
 ):
     """List all budgets for the user."""
@@ -463,7 +495,7 @@ async def list_budgets(
 @router.post("/budgets", response_model=BudgetResponse)
 async def create_or_update_budget(
     payload: BudgetCreate,
-    auth: AuthContext = Depends(require_plan("personal")),
+    auth: AuthContext = Depends(personal_auth),
     session: AsyncSession = Depends(get_db),
 ):
     """Create or update a budget for a category."""
@@ -477,7 +509,7 @@ async def create_or_update_budget(
 @router.delete("/budgets/{category}")
 async def delete_budget(
     category: str,
-    auth: AuthContext = Depends(require_plan("personal")),
+    auth: AuthContext = Depends(personal_auth),
     session: AsyncSession = Depends(get_db),
 ):
     """Delete a budget for a category."""
@@ -492,7 +524,7 @@ async def delete_budget(
 
 @router.get("/budgets/progress", response_model=List[BudgetProgressResponse])
 async def get_budget_progress(
-    auth: AuthContext = Depends(require_plan("personal")),
+    auth: AuthContext = Depends(personal_auth),
     session: AsyncSession = Depends(get_db),
 ):
     """Get all budgets with current month spending progress."""
@@ -538,7 +570,7 @@ User's message: {message}
 @router.post("/chat", response_model=ChatResponse)
 async def chat(
     payload: ChatRequest,
-    auth: AuthContext = Depends(require_plan("personal")),
+    auth: AuthContext = Depends(personal_auth),
     session: AsyncSession = Depends(get_db),
 ):
     """Chat with AI about personal finances."""
@@ -561,11 +593,20 @@ async def chat(
     # Also get basic insights for the response payload
     insights = await personal_repo.get_insights(session, auth.user.id)
 
+    await spend_cap_cache.check_or_raise(auth.user.org_id)
     try:
-        response = openai_client.chat(prompt)
+        # Off-load blocking OpenAI HTTP to a thread (P0-8).
+        response = await asyncio.to_thread(openai_client.chat, prompt)
+        if openai_client.last_total_tokens:
+            await spend_cap_cache.record_usage(
+                auth.user.org_id, openai_client.last_total_tokens
+            )
         return ChatResponse(response=response, insights=insights)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Chat failed: {str(e)}")
+    except HTTPException:
+        raise
+    except Exception:
+        # Don't leak internal error detail to clients (P0-6).
+        raise HTTPException(status_code=500, detail="Chat failed")
 
 
 @router.get("/categories")
@@ -588,7 +629,7 @@ async def list_categories():
 async def get_flow_data(
     start_date: Optional[date] = None,
     end_date: Optional[date] = None,
-    auth: AuthContext = Depends(require_plan("personal")),
+    auth: AuthContext = Depends(personal_auth),
     session: AsyncSession = Depends(get_db),
 ):
     """Get Sankey diagram data showing money flow: Income → Category → Merchant."""
@@ -612,7 +653,7 @@ async def get_flow_data(
 @router.get("/merchants")
 async def get_top_merchants(
     limit: int = 10,
-    auth: AuthContext = Depends(require_plan("personal")),
+    auth: AuthContext = Depends(personal_auth),
     session: AsyncSession = Depends(get_db),
 ):
     """Get top merchants by total spend."""
@@ -623,7 +664,7 @@ async def get_top_merchants(
 @router.get("/merchants/{vendor}")
 async def get_merchant_profile(
     vendor: str,
-    auth: AuthContext = Depends(require_plan("personal")),
+    auth: AuthContext = Depends(personal_auth),
     session: AsyncSession = Depends(get_db),
 ):
     """Get detailed profile for a specific merchant (Merchant DNA)."""
@@ -644,7 +685,7 @@ class WhatsAppLinkRequest(BaseModel):
 @router.post("/settings/whatsapp/link")
 async def link_whatsapp(
     payload: WhatsAppLinkRequest,
-    auth: AuthContext = Depends(require_plan("personal")),
+    auth: AuthContext = Depends(personal_auth),
     session: AsyncSession = Depends(get_db),
 ):
     """
@@ -708,7 +749,7 @@ async def link_whatsapp(
 
 @router.post("/settings/whatsapp/unlink")
 async def unlink_whatsapp(
-    auth: AuthContext = Depends(require_plan("personal")),
+    auth: AuthContext = Depends(personal_auth),
     session: AsyncSession = Depends(get_db),
 ):
     """Unlink WhatsApp from the user's account."""
@@ -721,9 +762,15 @@ async def unlink_whatsapp(
 
 @router.get("/settings/whatsapp/status")
 async def whatsapp_status(
-    auth: AuthContext = Depends(require_plan("personal")),
+    auth: AuthContext = Depends(personal_auth),
 ):
     """Get WhatsApp linking status."""
+    return {
+        "linked": auth.user.phone_number is not None,
+        "verified": auth.user.whatsapp_verified,
+        "phone": auth.user.phone_number,
+    }
+
     return {
         "linked": auth.user.phone_number is not None,
         "verified": auth.user.whatsapp_verified,

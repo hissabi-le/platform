@@ -45,6 +45,15 @@ class SubscriptionRepo:
         await subscription_cache.invalidate(org_id)
         return sub
 
+    async def get_by_stripe_id(
+        self, session: AsyncSession, stripe_subscription_id: str
+    ) -> Optional[Subscription]:
+        return await session.scalar(
+            select(Subscription).where(
+                Subscription.stripe_subscription_id == stripe_subscription_id
+            )
+        )
+
     async def upsert_from_stripe_event(
         self,
         session: AsyncSession,
@@ -54,28 +63,42 @@ class SubscriptionRepo:
     ) -> Optional[Subscription]:
         """
         Create or update a subscription record from a Stripe webhook event.
-        Prefers org_id in event['data']['object']['metadata']['org_id'].
-        Returns the upserted Subscription or None if org_id cannot be determined.
+
+        Handles the full lifecycle:
+          - customer.subscription.created / .updated / .deleted
+          - invoice.payment_succeeded / .payment_failed
+          - checkout.session.completed (when subscription metadata.org_id is set)
+
+        For subscription.* events, the org is identified via
+        event.data.object.metadata.org_id (set when creating the Checkout
+        session). For invoice.* events, we look up the existing row by
+        stripe_subscription_id.
         """
         etype = (event or {}).get("type", "")
         obj = (event or {}).get("data", {}).get("object", {}) or {}
 
-        # Determine org_id (prefer metadata)
+        if etype.startswith("invoice."):
+            return await self._handle_invoice_event(session, etype, obj)
+
+        # Subscription events (.created, .updated, .deleted) + checkout.session.completed
         meta = obj.get("metadata") or {}
         org_id_val = meta.get("org_id") or fallback_org_id
         if org_id_val is None:
-            # If you map customer->org elsewhere, hook it here.
             return None
         try:
             org_id = int(org_id_val)
         except Exception:
             return None
 
+        # For checkout.session.completed, the subscription id is in `subscription`
         stripe_sub_id = obj.get("id")
+        if etype == "checkout.session.completed":
+            stripe_sub_id = obj.get("subscription") or stripe_sub_id
+
         status = obj.get("status") or "active"
 
         # Derive plan nickname/id if available
-        plan = None
+        plan: Optional[str] = None
         try:
             items = (obj.get("items") or {}).get("data") or []
             if items:
@@ -85,7 +108,6 @@ class SubscriptionRepo:
             plan = None
         plan = plan or "starter"
 
-        # Upsert
         sub = await self.get_by_org(session, org_id)
         if sub:
             if stripe_sub_id:
@@ -101,10 +123,29 @@ class SubscriptionRepo:
             )
             session.add(sub)
 
-        # Optional: normalize canceled events
         if etype.endswith(".deleted") or status == "canceled":
             sub.status = "canceled"
 
         await session.flush()
         await subscription_cache.invalidate(org_id)
+        return sub
+
+    async def _handle_invoice_event(
+        self, session: AsyncSession, etype: str, obj: dict
+    ) -> Optional[Subscription]:
+        """Map invoice.payment_succeeded/failed to subscription status."""
+        stripe_sub_id = obj.get("subscription")
+        if not stripe_sub_id:
+            return None
+        sub = await self.get_by_stripe_id(session, stripe_sub_id)
+        if not sub:
+            return None
+
+        if etype == "invoice.payment_failed":
+            sub.status = "past_due"
+        elif etype == "invoice.payment_succeeded":
+            sub.status = "active"
+
+        await session.flush()
+        await subscription_cache.invalidate(sub.org_id)
         return sub

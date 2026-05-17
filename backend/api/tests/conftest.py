@@ -33,6 +33,23 @@ def setup_db() -> None:
     asyncio.run(init())
 
 
+@pytest.fixture(autouse=True)
+def _reset_global_state() -> None:
+    """Reset module-level caches between tests to prevent state leakage."""
+    from src.cache.login_lockout_cache import login_lockout_cache
+    from src.cache.subscription_cache import subscription_cache
+    from src.cache.token_revocation_cache import token_revocation_cache
+    from src.rate_limit import login_rate_limiter, uploads_rate_limiter
+
+    asyncio.run(subscription_cache.clear())
+    asyncio.run(login_rate_limiter.reset())
+    asyncio.run(uploads_rate_limiter.reset())
+    # Drop local in-process caches that have no public ``clear`` method.
+    token_revocation_cache._local.clear()
+    login_lockout_cache._local_count.clear()
+    login_lockout_cache._local_lock_until.clear()
+
+
 @pytest_asyncio.fixture
 async def async_db_session():
     """Provide an async database session for testing."""

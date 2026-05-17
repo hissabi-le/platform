@@ -144,8 +144,8 @@ async def whatsapp_webhook(request: Request):
             asyncio.create_task(
                 send_whatsapp_message(
                     sender_number,
-                    "I currently only support text messages. "
-                    "Receipt scanning is coming soon! 📸"
+                    "I can't read images yet — please type your expense and "
+                    "I'll log it (e.g. \"coffee 4.50\")."
                 )
             )
         return Response(status_code=200)

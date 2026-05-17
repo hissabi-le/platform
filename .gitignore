@@ -1,5 +1,51 @@
-/target
-__pycache__/
-.env
-.venv
+# OS
 .DS_Store
+Thumbs.db
+
+# Editors / IDEs
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.venv*/
+venv/
+test_venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+coverage/
+
+# Node / Next.js
+node_modules/
+.next/
+out/
+dist/
+build/
+.turbo/
+*.tsbuildinfo
+
+# Rust
+/target
+
+# Logs
+*.log
+logs/
+
+# Secrets / env files (allow .env.example)
+.env
+.env.*
+!.env.example
+
+# Local data
+data/uploads/
+*.sqlite
+*.sqlite3
+*.db

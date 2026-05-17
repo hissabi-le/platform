@@ -1,5 +1,5 @@
 import asyncio
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from fastapi.testclient import TestClient
@@ -46,7 +46,7 @@ async def _prepare_user() -> User:
             )
         )
         await session.flush()
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         session.add_all(
             [
                 Transaction(

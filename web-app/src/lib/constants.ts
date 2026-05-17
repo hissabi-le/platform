@@ -26,6 +26,10 @@ export const API_ENDPOINTS = {
         DAY: "/journal/day",
         RESOLVE: (id: number) => `/journal/day/${id}/resolve`,
     },
+    BILLING: {
+        CHECKOUT_SESSION: "/billing/checkout-session",
+        PORTAL_SESSION: "/billing/portal-session",
+    },
     PERSONAL: {
         ENTRIES: "/personal/entries",
         ACCOUNTS: "/personal/accounts",

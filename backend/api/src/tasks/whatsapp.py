@@ -163,18 +163,31 @@ def _looks_like_direct_answer(text: str) -> bool:
 # Intent classification
 # ---------------------------------------------------------------------------
 
-def _classify_intent(llm: OpenAIClient, text: str) -> str:
-    """Classify user intent. Returns LOG_TRANSACTION, QUERY_DATA, or GREETING."""
+def _heuristic_intent(text: str) -> str:
+    lower = text.lower()
+    question_words = {"how", "what", "when", "where", "show", "tell", "which", "?"}
+    if any(w in lower for w in question_words):
+        return "QUERY_DATA"
+    greeting_words = {"hi", "hello", "hey", "thanks", "thank", "sup", "yo"}
+    if any(lower.startswith(w) for w in greeting_words):
+        return "GREETING"
+    return "LOG_TRANSACTION"
+
+
+def _classify_intent(llm: OpenAIClient, text: str, org_id: int | None = None) -> str:
+    """Classify user intent. Returns LOG_TRANSACTION, QUERY_DATA, or GREETING.
+
+    Falls back to a keyword heuristic when the LLM is unavailable OR when
+    the org has exceeded its daily token cap — in either case we'd rather
+    misclassify than silently lock the user out.
+    """
+    from ..cache.spend_cap_cache import spend_cap_cache
+
     if not llm.client:
-        # Fallback heuristic when LLM is unavailable
-        lower = text.lower()
-        question_words = {"how", "what", "when", "where", "show", "tell", "which", "?"}
-        if any(w in lower for w in question_words):
-            return "QUERY_DATA"
-        greeting_words = {"hi", "hello", "hey", "thanks", "thank", "sup", "yo"}
-        if any(lower.startswith(w) for w in greeting_words):
-            return "GREETING"
-        return "LOG_TRANSACTION"
+        return _heuristic_intent(text)
+    if org_id is not None and spend_cap_cache.is_over_cap_sync(org_id):
+        log.warning("Org %s over OpenAI cap; using heuristic intent", org_id)
+        return _heuristic_intent(text)
 
     try:
         comp = llm.client.chat.completions.create(
@@ -187,6 +200,10 @@ def _classify_intent(llm: OpenAIClient, text: str) -> str:
             temperature=0,
             timeout=10,
         )
+        if org_id is not None:
+            tokens = getattr(getattr(comp, "usage", None), "total_tokens", None)
+            if tokens:
+                spend_cap_cache.record_usage_sync(org_id, tokens)
         result = (comp.choices[0].message.content or "").strip().upper()
         if result in ("LOG_TRANSACTION", "QUERY_DATA", "GREETING"):
             return result
@@ -201,9 +218,16 @@ def _classify_intent(llm: OpenAIClient, text: str) -> str:
 # Transaction parser
 # ---------------------------------------------------------------------------
 
-def _parse_transaction(llm: OpenAIClient, text: str) -> list[dict[str, Any]]:
+def _parse_transaction(
+    llm: OpenAIClient, text: str, org_id: int | None = None
+) -> list[dict[str, Any]]:
     """Parse transaction text into structured entries."""
+    from ..cache.spend_cap_cache import spend_cap_cache
+
     if not llm.client:
+        return []
+    if org_id is not None and spend_cap_cache.is_over_cap_sync(org_id):
+        log.warning("Org %s over OpenAI cap; skipping transaction parse", org_id)
         return []
 
     try:
@@ -214,6 +238,10 @@ def _parse_transaction(llm: OpenAIClient, text: str) -> list[dict[str, Any]]:
             response_format={"type": "json_object"},
             timeout=15,
         )
+        if org_id is not None:
+            tokens = getattr(getattr(comp, "usage", None), "total_tokens", None)
+            if tokens:
+                spend_cap_cache.record_usage_sync(org_id, tokens)
         raw = comp.choices[0].message.content or "[]"
         data = json.loads(raw)
         if isinstance(data, list):
@@ -231,7 +259,12 @@ def _parse_transaction(llm: OpenAIClient, text: str) -> list[dict[str, Any]]:
 # Dramatiq Actor
 # ---------------------------------------------------------------------------
 
-@dramatiq.actor(max_retries=0, queue_name="whatsapp")
+@dramatiq.actor(
+    max_retries=3,
+    min_backoff=2_000,     # 2 seconds
+    max_backoff=60_000,    # 1 minute
+    queue_name="whatsapp",
+)
 def process_whatsapp_message(sender_number: str, text: str, message_sid: str = "") -> None:
     """Entry point — Dramatiq runs this synchronously, we bridge to async."""
     asyncio.run(_process_message(sender_number, text, message_sid))
@@ -376,7 +409,7 @@ async def _process_message_inner(sender_number: str, text: str, message_sid: str
         # 4. Classify intent via LLM
         # ---------------------------------------------------------------
         llm = OpenAIClient()
-        intent = _classify_intent(llm, text)
+        intent = _classify_intent(llm, text, org_id=user.org_id)
         log.info("Intent for user %s: %s (text: '%s')", user.id, intent, text[:80])
 
         if intent == "LOG_TRANSACTION":
@@ -396,7 +429,7 @@ async def _handle_log_transaction(
 ) -> None:
     """Parse text and create personal entries."""
     llm = OpenAIClient()
-    entries = _parse_transaction(llm, text)
+    entries = _parse_transaction(llm, text, org_id=user.org_id)
 
     if not entries:
         await send_whatsapp_message(
@@ -498,8 +531,18 @@ async def _handle_query(db, user: User, sender_number: str, text: str) -> None:
         message=text,
     )
 
+    from ..cache.spend_cap_cache import spend_cap_cache
+
     llm = OpenAIClient()
+    if spend_cap_cache.is_over_cap_sync(user.org_id):
+        await send_whatsapp_message(
+            sender_number,
+            "Daily AI usage limit reached for your account. Resets at 00:00 UTC.",
+        )
+        return
     response = llm.chat(prompt)
+    if llm.last_total_tokens:
+        spend_cap_cache.record_usage_sync(user.org_id, llm.last_total_tokens)
 
     await send_whatsapp_message(sender_number, response)
 

@@ -1,29 +1,45 @@
 #!/usr/bin/env python3
 """
-Seed script to create test account for Hisabi Personal demo.
-Creates a user with cedric@personal.com and populates sample personal finance data.
+Seed script to create a test account for Hisabi Personal demo.
+
+Usage:
+    SEED_EMAIL=demo@example.com SEED_PASSWORD=changeme \\
+        python -m scripts.seed_personal_demo
+
+Both SEED_EMAIL and SEED_PASSWORD are required — there are no defaults.
 """
 import asyncio
+import os
 import random
+import sys
 from datetime import date, timedelta
 from decimal import Decimal
-
-from sqlalchemy import select, delete
-
-# Add parent to path for imports
-import sys
 from pathlib import Path
-sys.path.insert(0, str(Path(__file__).parent))
+
+from sqlalchemy import delete, select
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from src.database import async_session
-from src.models import User, Organisation, Subscription, PersonalEntry, PersonalBudget
+from src.models import (
+    Organisation,
+    PersonalBudget,
+    PersonalEntry,
+    Subscription,
+    User,
+)
 
 
-# Sample data configuration
-TEST_EMAIL = "cedric@personal.com"
-TEST_PASSWORD = "test1234"  # Will be hashed
+SEED_EMAIL = os.environ.get("SEED_EMAIL")
+SEED_PASSWORD = os.environ.get("SEED_PASSWORD")
 
-# Realistic vendors by category
+if not SEED_EMAIL or not SEED_PASSWORD:
+    sys.stderr.write(
+        "error: SEED_EMAIL and SEED_PASSWORD must be set in the environment.\n"
+    )
+    sys.exit(2)
+
+
 VENDORS = {
     "groceries": ["Whole Foods", "Trader Joe's", "Costco", "Safeway", "Sprouts"],
     "dining": ["Olive Garden", "Chipotle", "In-N-Out", "Panda Express", "Cheesecake Factory"],
@@ -47,7 +63,6 @@ VENDORS = {
     "other": ["Miscellaneous"],
 }
 
-# Amount ranges by category (min, max)
 AMOUNT_RANGES = {
     "groceries": (40, 180),
     "dining": (15, 85),
@@ -71,102 +86,81 @@ AMOUNT_RANGES = {
     "other": (10, 50),
 }
 
-# Frequency per month (approximate)
 FREQUENCY = {
-    "groceries": 8,       # ~2x per week
-    "dining": 10,         # ~2.5x per week
-    "delivery": 6,        # ~1.5x per week
+    "groceries": 8,
+    "dining": 10,
+    "delivery": 6,
     "alcohol": 2,
     "nightlife": 3,
-    "fitness": 8,         # ~2x per week (membership + classes)
+    "fitness": 8,
     "wellness": 1,
     "fashion": 2,
     "entertainment": 4,
     "personal_care": 2,
-    "rent": 1,            # Monthly
-    "utilities": 3,       # Multiple providers
+    "rent": 1,
+    "utilities": 3,
     "household": 3,
-    "subscriptions": 4,   # Multiple services
-    "transportation": 12, # ~3x per week
+    "subscriptions": 4,
+    "transportation": 12,
     "healthcare": 1,
     "education": 1,
-    "travel": 0,          # Less frequent
+    "travel": 0,
     "gifts": 1,
     "other": 2,
 }
 
 
-async def create_sample_data():
-    """Create test user and sample personal finance data."""
-    # engine = get_async_engine() # Not needed with async_session factory
-    
+async def create_sample_data() -> None:
     async with async_session() as session:
-        # Check if user already exists
-        result = await session.execute(
-            select(User).where(User.email == TEST_EMAIL)
-        )
+        result = await session.execute(select(User).where(User.email == SEED_EMAIL))
         user = result.scalar_one_or_none()
-        
+
+        from passlib.context import CryptContext
+        pwd_context = CryptContext(schemes=["argon2"], deprecated="auto")
+        hashed = pwd_context.hash(SEED_PASSWORD)
+
         if not user:
-            # Create Organisation first
             org = Organisation(name="Personal Demo Org")
             session.add(org)
             await session.flush()
-            
-            # Create Subscription (Personal Plan)
+
             sub = Subscription(
                 org_id=org.id,
                 stripe_subscription_id="sub_demo_personal",
                 plan="personal",
-                status="active"
+                status="active",
             )
             session.add(sub)
 
-            # Create user with hashed password
-            from passlib.context import CryptContext
-            pwd_context = CryptContext(schemes=["argon2"], deprecated="auto")
-            hashed = pwd_context.hash(TEST_PASSWORD)
-            
             user = User(
-                email=TEST_EMAIL,
+                email=SEED_EMAIL,
                 hashed_password=hashed,
                 role="admin",
                 org_id=org.id,
             )
             session.add(user)
             await session.flush()
-            print(f"✓ Created user: {TEST_EMAIL}")
+            print(f"Created user: {SEED_EMAIL}")
         else:
-            print(f"✓ User already exists: {TEST_EMAIL}")
-            # Reset password to ensure correct hashing
-            from passlib.context import CryptContext
-            pwd_context = CryptContext(schemes=["argon2"], deprecated="auto")
-            hashed = pwd_context.hash(TEST_PASSWORD)
             user.hashed_password = hashed
             session.add(user)
             await session.flush()
-            print("  Updated password with Argon2 hash")
+            print(f"User exists: {SEED_EMAIL} — password reset")
 
-            # Clear existing personal entries for fresh demo
-            from sqlalchemy import delete
             await session.execute(
                 delete(PersonalEntry).where(PersonalEntry.user_id == user.id)
             )
             await session.execute(
                 delete(PersonalBudget).where(PersonalBudget.user_id == user.id)
             )
-            print("  Cleared existing personal data for fresh demo")
-        
+
         user_id = user.id
-        
-        # Generate entries for the past 30 days
         today = date.today()
         entries_created = 0
-        
+
         for days_ago in range(30):
             entry_date = today - timedelta(days=days_ago)
-            
-            # Add income on 1st and 15th
+
             if entry_date.day == 1 or entry_date.day == 15:
                 income = PersonalEntry(
                     user_id=user_id,
@@ -181,19 +175,15 @@ async def create_sample_data():
                 )
                 session.add(income)
                 entries_created += 1
-            
-            # Add random expenses based on frequency
+
             for category, monthly_freq in FREQUENCY.items():
-                # Probability of this category appearing today
                 daily_prob = monthly_freq / 30.0
-                
                 if random.random() < daily_prob:
                     vendors = VENDORS.get(category, ["Unknown"])
                     vendor = random.choice(vendors)
-                    
                     min_amt, max_amt = AMOUNT_RANGES.get(category, (10, 50))
                     amount = round(random.uniform(min_amt, max_amt), 2)
-                    
+
                     entry = PersonalEntry(
                         user_id=user_id,
                         entry_date=entry_date,
@@ -207,8 +197,7 @@ async def create_sample_data():
                     )
                     session.add(entry)
                     entries_created += 1
-        
-        # Add some budgets
+
         budgets = [
             ("dining", 400),
             ("groceries", 600),
@@ -216,7 +205,7 @@ async def create_sample_data():
             ("transportation", 300),
             ("subscriptions", 100),
         ]
-        
+
         for category, limit in budgets:
             budget = PersonalBudget(
                 user_id=user_id,
@@ -224,12 +213,11 @@ async def create_sample_data():
                 monthly_limit=Decimal(str(limit)),
             )
             session.add(budget)
-        
+
         await session.commit()
-        
-        print(f"✓ Created {entries_created} personal entries")
-        print(f"✓ Created {len(budgets)} budgets")
-        print(f"\n🎉 Done! Login with: {TEST_EMAIL} / {TEST_PASSWORD}")
+
+        print(f"Created {entries_created} personal entries")
+        print(f"Created {len(budgets)} budgets")
 
 
 if __name__ == "__main__":

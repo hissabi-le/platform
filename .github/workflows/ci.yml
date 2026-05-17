@@ -18,8 +18,8 @@ jobs:
         run: pip install ruff
       - name: Lint backend
         run: |
-          ruff check backend/api/src --select=E,F --ignore=E501,F401,F841 || true
-          ruff check backend/analytics-worker/src --select=E,F --ignore=E501,F401,F841 || true
+          ruff check backend/api/src --select=E,F --ignore=E501,F401,F841
+          ruff check backend/analytics-worker/src --select=E,F --ignore=E501,F401,F841
 
   lint-frontend:
     runs-on: ubuntu-latest
@@ -37,7 +37,7 @@ jobs:
         run: pnpm install --frozen-lockfile
         working-directory: web-app
       - name: Lint frontend
-        run: pnpm lint || true
+        run: pnpm lint
         working-directory: web-app
 
   build-frontend:
@@ -55,6 +55,9 @@ jobs:
           cache-dependency-path: web-app/pnpm-lock.yaml
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+        working-directory: web-app
+      - name: Test
+        run: pnpm test
         working-directory: web-app
       - name: Build
         run: pnpm build
@@ -105,13 +108,13 @@ jobs:
         env:
           DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/hissabi_test
       - name: Run API tests
-        run: pytest tests/ -v --ignore=tests/test_integration.py || true
+        run: pytest tests/ -v
         working-directory: backend/api
         env:
           DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/hissabi_test
           REDIS_URL: redis://localhost:6379
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          JWT_SECRET: test-secret-key-for-ci
+          JWT_SECRET: test-secret-key-for-ci-which-is-at-least-32-chars
           AWS_ACCESS_KEY_ID: test
           AWS_SECRET_ACCESS_KEY: test
           S3_BUCKET_NAME: test-bucket

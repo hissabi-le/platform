@@ -3,8 +3,9 @@ import json
 import logging
 import mimetypes
 import os
+import sys
 import tempfile
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Literal
 
 try:  # pragma: no cover - optional dependency
@@ -12,11 +13,26 @@ try:  # pragma: no cover - optional dependency
 except Exception:  # pragma: no cover - optional dependency
     filetype = None  # type: ignore
 
+try:  # pragma: no cover - optional dependency
+    import sentry_sdk  # type: ignore
+    from sentry_sdk.integrations.fastapi import FastApiIntegration  # type: ignore
+except Exception:  # pragma: no cover - optional dependency
+    sentry_sdk = None  # type: ignore
+    FastApiIntegration = None  # type: ignore
+
+from contextlib import asynccontextmanager
+
 from fastapi import Depends, FastAPI, File, HTTPException, Request, UploadFile, status
+from fastapi.middleware.httpsredirect import HTTPSRedirectMiddleware
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import func, select
+
+import asyncio
 
 from .cache.idempotency_cache import idempotency_cache
+from .cache.spend_cap_cache import spend_cap_cache
 from .config import settings
 from .database import Base, engine, get_db
 from .models import Document, InventoryItem, InventoryMovement, Transaction, Upload
@@ -38,6 +54,7 @@ from .repositories.transaction import TransactionRepo
 from .rate_limit import enforce_upload_rate_limit
 from .routers import analytics as analytics_router
 from .routers import auth as auth_router
+from .routers import billing as billing_router
 from .routers import inventory as inventory_router
 from .routers import journal as journal_router
 from .routers import personal as personal_router
@@ -50,37 +67,95 @@ from .tasks import enqueue_upload_processing
 
 ensure_async_client_app_support()
 
-logging.basicConfig(
-    filename="hissabi.log",
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
+
+def _configure_logging() -> None:
+    """Configure structured JSON logging to stdout.
+
+    Falls back to a plain stream handler if python-json-logger isn't installed
+    (keeps local dev working without the extra dep).
+    """
+    handler = logging.StreamHandler(sys.stdout)
+    try:
+        from pythonjsonlogger import jsonlogger  # type: ignore
+
+        formatter = jsonlogger.JsonFormatter(
+            "%(asctime)s %(levelname)s %(name)s %(message)s"
+        )
+    except Exception:  # pragma: no cover - fallback only used when dep missing
+        formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s")
+    handler.setFormatter(formatter)
+
+    root = logging.getLogger()
+    root.handlers.clear()
+    root.addHandler(handler)
+    root.setLevel(logging.INFO)
+
+
+_configure_logging()
+
+if settings.sentry_dsn and sentry_sdk is not None:
+    integrations = [FastApiIntegration()] if FastApiIntegration is not None else []
+    sentry_sdk.init(
+        dsn=settings.sentry_dsn,
+        environment=settings.environment,
+        traces_sample_rate=0.05,
+        send_default_pii=False,
+        integrations=integrations,
+    )
+
+_is_production = settings.environment == "production"
+
+
+@asynccontextmanager
+async def _lifespan(app: FastAPI):
+    """App lifespan: dev-only schema bootstrap on startup, no teardown work."""
+    if settings.environment == "development":
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+    yield
+    # Nothing to clean up at shutdown today; engines are closed by the
+    # process exit.
+
+
+app = FastAPI(
+    title=settings.app_name,
+    version="0.2.0",
+    docs_url=None if _is_production else "/docs",
+    redoc_url=None if _is_production else "/redoc",
+    openapi_url=None if _is_production else "/openapi.json",
+    lifespan=_lifespan,
 )
-app = FastAPI(title=settings.app_name, version="0.2.0")
 
-# CORS Configuration
+if settings.environment == "production":
+    app.add_middleware(HTTPSRedirectMiddleware)
+
+
+@app.exception_handler(Exception)
+async def _unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    """Catch-all so unhandled exceptions never leak stack traces or internal
+    error text to clients. HTTPException is handled by FastAPI's default
+    handler and is not routed here."""
+    logging.exception(
+        "unhandled exception on %s %s",
+        request.method,
+        request.url.path,
+    )
+    if sentry_sdk is not None:
+        try:
+            sentry_sdk.capture_exception(exc)
+        except Exception:  # pragma: no cover - defensive
+            pass
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal server error"},
+    )
+
+
+# CORS Configuration — driven entirely by CORS_ORIGINS env var.
 from fastapi.middleware.cors import CORSMiddleware
-import logging
 
-# Use CORS_ORIGINS from settings (set via env var)
-# This includes Railway frontend URL when CORS_ORIGINS is configured
-_cors_origins = list(settings.cors_origins)  # From CORS_ORIGINS env var
-
-# Add Railway production URLs
-_cors_origins.extend([
-    "https://cheerful-caring-production-f759.up.railway.app",
-    "https://hissabi.com",
-    "https://www.hissabi.com",
-])
-
-# Add common development origins if not already present
-for origin in ["http://localhost:3000", "http://127.0.0.1:3000"]:
-    if origin not in _cors_origins:
-        _cors_origins.append(origin)
-
-# Remove duplicates
-_cors_origins = list(set(_cors_origins))
-
-logging.info(f"CORS allowed origins: {_cors_origins}")
+_cors_origins = list(settings.cors_origins)
+logging.info("CORS allowed origins: %s", _cors_origins)
 
 app.add_middleware(
     CORSMiddleware,
@@ -96,6 +171,7 @@ app.include_router(settings_router.router)
 app.include_router(journal_router.router)
 app.include_router(personal_router.router)
 app.include_router(webhooks_router.router)
+app.include_router(billing_router.router)
 
 JWT_SECRET = settings.jwt_secret
 JWT_EXPIRE_MINUTES = settings.jwt_access_minutes
@@ -142,15 +218,6 @@ async def _persist_uploaded_document(
         size_bytes=len(data),
     )
     return doc
-
-
-# --------------------- Startup (Dev DB bootstrap) ---------------------
-@app.on_event("startup")
-async def on_startup():
-    # In production, manage schema with Alembic migrations.
-    if settings.environment == "development":
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
 
 
 # --------------------- Uploads ---------------------
@@ -226,6 +293,10 @@ async def create_upload(
         if cached:
             return UploadCreateResponse(**cached)
 
+    # Block new uploads from starting if the org has burned through its
+    # daily OpenAI budget — uploads already in flight are not interrupted.
+    await spend_cap_cache.check_or_raise(auth.user.org_id)
+
     upload = Upload(org_id=auth.user.org_id, filename=file.filename, status="pending")
     db.add(upload)
     await db.flush()
@@ -267,7 +338,7 @@ async def generate_accounting(
     auth: AuthContext = Depends(require_plan("analytics_basic")),
     db: AsyncSession = Depends(get_db),
 ):
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     windows = {
         "1m": (now - timedelta(days=30), now),
         "3m": (now - timedelta(days=90), now),
@@ -339,26 +410,48 @@ async def generate_accounting(
 
 
 # --------------------- Assistant Q&A ---------------------
-@app.post("/assistant/ask", response_model=dict)
+class AssistantAskRequest(BaseModel):
+    question: str = Field(min_length=1, max_length=2000)
+    balance: dict = Field(default_factory=dict)
+
+
+class AssistantAskResponse(BaseModel):
+    answer: str
+
+
+@app.post("/assistant/ask", response_model=AssistantAskResponse)
 async def assistant_qa(
-    body: dict,
+    body: AssistantAskRequest,
     auth: AuthContext = Depends(require_plan("assistant")),
     db: AsyncSession = Depends(get_db),
 ):
-    # expects {"balance": {...}, "question": "..."}
-    bal = body.get("balance") or {}
-    q = body.get("question") or ""
-    if not q:
-        raise HTTPException(status_code=400, detail="question is required")
+    await spend_cap_cache.check_or_raise(auth.user.org_id)
     llm = OpenAIClient()
-    answer = llm.answer_question(bal, q)
-    return {"answer": answer}
+    # Off-load the blocking OpenAI HTTP call to a thread so the event loop
+    # stays responsive (P0-8).
+    answer = await asyncio.to_thread(llm.answer_question, body.balance, body.question)
+    if llm.last_total_tokens:
+        await spend_cap_cache.record_usage(auth.user.org_id, llm.last_total_tokens)
+    return AssistantAskResponse(answer=answer)
 
 
 # --------------------- Stripe webhook ---------------------
+# Subset of Stripe event types we act on. Any other event is acknowledged with
+# a 200 so Stripe stops retrying, but we don't try to interpret it.
+_STRIPE_HANDLED_EVENTS = {
+    "checkout.session.completed",
+    "customer.subscription.created",
+    "customer.subscription.updated",
+    "customer.subscription.deleted",
+    "invoice.payment_succeeded",
+    "invoice.payment_failed",
+}
+
+
 @app.post("/webhooks/stripe")
 async def stripe_webhook(request: Request, db: AsyncSession = Depends(get_db)):
     import stripe
+
     payload = await request.body()
     sig_header = request.headers.get("stripe-signature", "")
     secret = settings.stripe_webhook_secret or ""
@@ -366,19 +459,88 @@ async def stripe_webhook(request: Request, db: AsyncSession = Depends(get_db)):
         event = stripe.Webhook.construct_event(payload, sig_header, secret)
     except Exception:
         raise HTTPException(status_code=400, detail="invalid signature")
-    await SubscriptionRepo().upsert_from_stripe_event(db, event)
-    await db.commit()
+
+    event_id = event.get("id") if isinstance(event, dict) else getattr(event, "id", None)
+    event_type = event.get("type") if isinstance(event, dict) else getattr(event, "type", "")
+
+    # Idempotency: Stripe retries on non-2xx; dedupe by event.id.
+    if event_id:
+        idem_key = f"stripe:event:{event_id}"
+        if await idempotency_cache.get(idem_key) is not None:
+            return {"status": "ok", "deduped": True}
+
+    if event_type in _STRIPE_HANDLED_EVENTS:
+        try:
+            await SubscriptionRepo().upsert_from_stripe_event(
+                db, event if isinstance(event, dict) else event.to_dict()
+            )
+            await db.commit()
+        except Exception:
+            await db.rollback()
+            logging.exception("stripe webhook handler failed for %s", event_type)
+            raise HTTPException(status_code=500, detail="webhook processing failed")
+    else:
+        logging.info("stripe webhook: ignoring unhandled event type %s", event_type)
+
+    if event_id:
+        await idempotency_cache.set(idem_key, {"type": event_type})
+
     return {"status": "ok"}
 
 
 # --------------------- Health ---------------------
-@app.get("/health", response_model=dict)
-async def health():
+@app.get("/healthz", response_model=dict)
+async def healthz():
+    """Liveness probe — always returns 200 as long as the process is up."""
     return {"status": "ok"}
 
-@app.get("/healthz", response_model=dict)
-async def health_compat():
-    return await health()
+
+@app.get("/health", response_model=dict)
+async def health(db: AsyncSession = Depends(get_db)):
+    """Readiness probe — verifies DB (and Redis if configured) are reachable."""
+    db_ok = True
+    redis_ok: bool | None = None
+    db_error: str | None = None
+    redis_error: str | None = None
+
+    try:
+        await db.execute(text("SELECT 1"))
+    except Exception as exc:  # pragma: no cover - exercised in integration
+        db_ok = False
+        db_error = str(exc)
+        logging.warning("health: db check failed: %s", exc)
+
+    if settings.redis_url:
+        try:
+            from redis import asyncio as redis_async  # local import to keep optional
+
+            client = redis_async.from_url(settings.redis_url, encoding="utf-8", decode_responses=True)
+            try:
+                await client.ping()
+                redis_ok = True
+            finally:
+                await client.close()
+        except Exception as exc:  # pragma: no cover - exercised in integration
+            redis_ok = False
+            redis_error = str(exc)
+            logging.warning("health: redis check failed: %s", exc)
+
+    payload: dict[str, object] = {
+        "status": "ok" if db_ok and (redis_ok is not False) else "degraded",
+        "db": "ok" if db_ok else "down",
+    }
+    if redis_ok is not None:
+        payload["redis"] = "ok" if redis_ok else "down"
+    if db_error:
+        payload["db_error"] = db_error
+    if redis_error:
+        payload["redis_error"] = redis_error
+
+    if not db_ok or redis_ok is False:
+        raise HTTPException(status_code=503, detail=payload)
+
+    return payload
+
 
 @app.get("/version", response_model=dict)
 async def version():

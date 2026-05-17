@@ -1,15 +1,51 @@
 # src/repositories/personal.py
-"""Repository for Hisabi Personal - personal expense/income tracking."""
+"""Repository for Hisabi Personal - personal expense/income tracking.
+
+Tenant isolation invariant
+--------------------------
+Personal rows (entries, budgets, accounts) carry only ``user_id``, not
+``org_id``. Today this is safe because every User belongs to exactly one
+Organisation and ``security.current_user`` verifies on every request that
+the token's ``org`` claim matches ``user.org_id``. Repository call sites
+MUST pass a ``user_id`` that came from ``auth.user.id`` for the current
+request — never from request body, query params, or another row.
+
+If the data model evolves to support shared accounts (multiple users per
+``PersonalEntry``), the queries below must be re-keyed by ``org_id`` and
+joined through a membership table. The tripwire below catches at least the
+single-shard case where a user has been re-orged mid-session.
+"""
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import List, Optional, Dict, Any
 
+from fastapi import HTTPException, status
 from sqlalchemy import select, func, and_, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..models import PersonalEntry, PersonalBudget, PersonalCategory, PersonalAccount
+from ..models import PersonalEntry, PersonalBudget, PersonalCategory, PersonalAccount, User
+
+
+async def assert_user_in_org(
+    session: AsyncSession,
+    user_id: int,
+    org_id: int,
+) -> None:
+    """Tripwire: verify the (user_id, org_id) pair is still valid.
+
+    Cheap defense-in-depth — fires only if a user is moved between orgs
+    mid-session, or if a caller accidentally passes a foreign ``user_id``.
+    """
+    actual = await session.scalar(
+        select(User.org_id).where(User.id == user_id)
+    )
+    if actual is None or actual != org_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="User/organisation mismatch",
+        )
 
 
 class PersonalRepo:

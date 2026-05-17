@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, date
+from datetime import date, datetime, timezone
 from decimal import Decimal
 from typing import Any, Iterable, Optional
 
@@ -33,7 +33,7 @@ settings_repo = SettingsRepo()
 
 def _parse_date(value: Optional[str]) -> date:
     if not value:
-        return datetime.utcnow().date()
+        return datetime.now(timezone.utc).date()
     try:
         return date.fromisoformat(value)
     except ValueError as exc:
@@ -126,7 +126,7 @@ async def save_journal_day(
             entries=entries,
         )
         clarifications = _build_clarifications(entries, with_ids=False)
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         totals = JournalTotals(
             revenue=revenue,
             cost=cost,
@@ -446,7 +446,7 @@ async def toggle_payment_status(
         raise HTTPException(status_code=404, detail="Journal entry not found")
     
     # Update payment status
-    payment_date = datetime.utcnow() if status == "paid" else None
+    payment_date = datetime.now(timezone.utc) if status == "paid" else None
     entry.payment_status = status
     entry.payment_date = payment_date
     

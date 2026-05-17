@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import dramatiq
 
@@ -18,7 +18,11 @@ _RANGES: dict[str, timedelta] = {
 }
 
 
-@dramatiq.actor(max_retries=0)
+@dramatiq.actor(
+    max_retries=3,
+    min_backoff=10_000,    # 10 seconds
+    max_backoff=600_000,   # 10 minutes
+)
 def recompute_analytics(org_id: int) -> None:
     asyncio.run(_recompute(org_id))
 
@@ -26,7 +30,7 @@ def recompute_analytics(org_id: int) -> None:
 async def _recompute(org_id: int) -> None:
     async with async_session() as session:
         repo = TransactionRepo()
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         for range_key, delta in _RANGES.items():
             start = now - delta
             tx = await repo.window(session, org_id, start, now)

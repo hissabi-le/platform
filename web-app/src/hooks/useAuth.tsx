@@ -28,11 +28,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (isLoggingOut) return;
     setIsLoggingOut(true);
 
-    // Clear local state immediately - don't call API to avoid 401 loops
+    // Best-effort server-side revocation so the JWT can't be reused if leaked.
+    // Fire-and-forget — we still clear local state regardless.
+    api.auth.logout().catch(() => {
+      /* ignore: token may already be invalid */
+    });
+
     localStorage.removeItem(AUTH_TOKEN_KEY);
     setUser(null);
 
-    // Reset flag after a short delay
     setTimeout(() => setIsLoggingOut(false), 100);
   }, [isLoggingOut]);
 

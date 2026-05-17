@@ -1,5 +1,6 @@
 import asyncio
 import os
+import uuid
 
 import pytest
 
@@ -45,13 +46,16 @@ client = TestClient(app)
 
 
 async def _create_user_with_plan(plan: str | None, status: str = "active") -> User:
+    # Unique suffix so each test gets a fresh user/org without colliding
+    # on the `users.email` unique constraint when tests share the DB.
+    suffix = uuid.uuid4().hex[:8]
     async with async_session() as session:
-        org = Organisation(name=f"org-{plan or 'none'}")
+        org = Organisation(name=f"org-{plan or 'none'}-{suffix}")
         session.add(org)
         await session.flush()
         user = User(
             org_id=org.id,
-            email=f"user-{plan or 'none'}@test.com",
+            email=f"user-{plan or 'none'}-{suffix}@test.com",
             hashed_password=hash_password("secret123"),
             role="user",
         )

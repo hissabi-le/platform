@@ -390,6 +390,9 @@ class OpenAIClient:
             self.client = OpenAI(api_key=self.api_key)
         else:
             self.client = None  # triggers fallback paths
+        # Set by each completion call so callers can attribute usage to an org
+        # for spend-cap bookkeeping. None = no usage info available.
+        self.last_total_tokens: Optional[int] = None
 
     # ------------------- internal helpers -------------------
 
@@ -666,6 +669,52 @@ class OpenAIClient:
 
     # ------------------- Q&A over a balance sheet -------------------
 
+    def chat_json(self, prompt: str) -> list[dict[str, Any]]:
+        """Single-prompt JSON completion. Returns a list of dicts.
+
+        Used by ``/personal/parse`` to extract personal entries from free
+        text. The model is instructed to return a JSON array; if it instead
+        returns a JSON object with an ``entries`` or ``items`` key, we
+        unwrap. Any parse failure returns ``[]`` rather than raising — the
+        caller treats empty as "nothing extracted".
+        """
+        if not self.client:
+            return []
+        try:
+            comp = self.client.chat.completions.create(
+                model=self.json_model or self.model,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": (
+                            "You are a precise JSON-emitting assistant. "
+                            "Always respond with a JSON array under the key 'items' "
+                            "(or a top-level array). No prose."
+                        ),
+                    },
+                    {"role": "user", "content": prompt},
+                ],
+                response_format={"type": "json_object"},
+                timeout=30,
+            )
+            self.last_total_tokens = getattr(getattr(comp, "usage", None), "total_tokens", None)
+            text = comp.choices[0].message.content or "{}"
+            data = json.loads(text)
+        except Exception as exc:
+            log.error("chat_json failed: %s", exc)
+            return []
+
+        if isinstance(data, list):
+            return [d for d in data if isinstance(d, dict)]
+        if isinstance(data, dict):
+            for key in ("items", "entries", "results", "data"):
+                value = data.get(key)
+                if isinstance(value, list):
+                    return [d for d in value if isinstance(d, dict)]
+            # Single-object response → wrap into list
+            return [data]
+        return []
+
     def chat(self, prompt: str) -> str:
         """
         Plain-text chat completion. Used by the personal finance chat endpoint.
@@ -684,6 +733,7 @@ class OpenAIClient:
             comp = self.client.chat.completions.create(
                 model=self.model, messages=messages, timeout=30
             )
+            self.last_total_tokens = getattr(getattr(comp, "usage", None), "total_tokens", None)
             return (comp.choices[0].message.content or "").strip()
         except Exception as e:
             log.error("chat failed: %s", e)
@@ -706,6 +756,7 @@ class OpenAIClient:
         ]
         try:
             comp = self.client.chat.completions.create(model=self.model, messages=messages, timeout=30)
+            self.last_total_tokens = getattr(getattr(comp, "usage", None), "total_tokens", None)
             return (comp.choices[0].message.content or "").strip()
         except Exception as e:
             log.error("answer_question failed: %s", e)
